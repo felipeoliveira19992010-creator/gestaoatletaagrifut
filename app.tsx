@@ -3,31 +3,13 @@ import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import "./storage.js";
 
-// ── Logo SVG ─────────────────────────────────────────────
+const LOGO_SRC = "logo.png";
+const getLogoSrc = () => new URL(LOGO_SRC, window.location.href).href;
+
+// ── Logo ─────────────────────────────────────────────────
 function AgrifutLogo({size=48}:{size?:number}) {
   return (
-    <svg width={size} height={size} viewBox="0 0 100 115" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M50 2 L95 22 L95 65 Q95 95 50 113 Q5 95 5 65 L5 22 Z" fill="#1B2A4A" stroke="#F5C518" strokeWidth="4"/>
-      <path d="M50 2 L91 21 L91 65 Q91 93 50 110 Q9 93 9 65 L9 21 Z" fill="#1B2A4A"/>
-      {/* Gold stripes */}
-      <path d="M18 75 L28 62 L28 90 L18 90 Z" fill="#F5C518" opacity="0.9"/>
-      <path d="M35 68 L45 55 L45 90 L35 90 Z" fill="#F5C518" opacity="0.9"/>
-      <path d="M55 68 L65 55 L65 90 L55 90 Z" fill="#F5C518" opacity="0.9"/>
-      <path d="M72 75 L82 62 L82 90 L72 90 Z" fill="#F5C518" opacity="0.9"/>
-      {/* Ship mast */}
-      <rect x="48" y="25" width="4" height="35" fill="white"/>
-      <rect x="35" y="32" width="30" height="3" fill="white"/>
-      <rect x="38" y="40" width="24" height="3" fill="white"/>
-      {/* Hull */}
-      <path d="M36 60 Q50 68 64 60 L60 72 Q50 78 40 72 Z" fill="white"/>
-      {/* Waves */}
-      <path d="M32 80 Q38 77 44 80 Q50 83 56 80 Q62 77 68 80" stroke="white" strokeWidth="2" fill="none"/>
-      <path d="M36 85 Q42 82 48 85 Q54 88 60 85 Q64 83 68 85" stroke="white" strokeWidth="1.5" fill="none"/>
-      {/* Flag */}
-      <rect x="50" y="22" width="10" height="7" fill="#F5C518"/>
-      {/* Text top */}
-      <text x="50" y="18" textAnchor="middle" fill="#F5C518" fontSize="8" fontWeight="bold" fontFamily="Arial" letterSpacing="1">AGRIFUT</text>
-    </svg>
+    <img src={LOGO_SRC} alt="Agrifut Itajaí EC" style={{width:size,height:size,objectFit:"contain",display:"block"}}/>
   );
 }
 
@@ -155,7 +137,7 @@ const generatePDF = (a, sig) => {
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ficha — ${a.nomeAtleta}</title>
 <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:28px;color:#1E293B;font-size:13px}
 .hdr{display:flex;align-items:center;gap:16px;margin-bottom:20px;border-bottom:3px solid #F5C518;padding-bottom:14px}
-.logo{width:52px;height:52px;background:#1B2A4A;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#F5C518;font-size:24px;font-weight:900}
+.logo{width:58px;height:58px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.logo img{width:100%;height:100%;object-fit:contain;display:block}
 h1{font-size:20px;color:#1B2A4A}
 .sec{margin-bottom:18px}.sec-t{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#1B2A4A;border-bottom:2px solid #F5C518;padding-bottom:3px;margin-bottom:10px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px}.fl{font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase}.fv{color:#1E293B;margin-top:2px}
@@ -165,7 +147,7 @@ h1{font-size:20px;color:#1B2A4A}
 .sig-a{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:28px}.sig-b{border-top:2px solid #1B2A4A;padding-top:6px;text-align:center;font-size:11px;color:#64748B;text-transform:uppercase}
 .foot{margin-top:24px;text-align:center;font-size:10px;color:#94A3B8;border-top:1px solid #E2E8F0;padding-top:10px}
 @media print{body{padding:14px}}</style></head><body>
-<div class="hdr"><div class="logo">A</div><div><h1>Itajaí Agrifut</h1><p style="font-size:11px;color:#94A3B8">CNPJ ${CNPJ} · Ficha de Matrícula</p></div></div>
+<div class="hdr"><div class="logo"><img src="${getLogoSrc()}" alt="Agrifut Itajaí EC"/></div><div><h1>Itajaí Agrifut</h1><p style="font-size:11px;color:#94A3B8">CNPJ ${CNPJ} · Ficha de Matrícula</p></div></div>
 <div class="sec"><div class="sec-t">Dados do Atleta</div><div class="grid">
 <div><div class="fl">Nome</div><div class="fv">${a.nomeAtleta||"—"}</div></div>
 <div><div class="fl">Posição</div><div class="fv">${a.posicao||"—"}</div></div>
@@ -1457,7 +1439,7 @@ function PDFModal({atleta:a, sig, onClose}) {
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ficha — ${a.nomeAtleta}</title>
 <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:28px;color:#1E293B;font-size:13px;max-width:800px;margin:0 auto}
 .hdr{display:flex;align-items:center;gap:16px;margin-bottom:20px;border-bottom:3px solid #F5C518;padding-bottom:14px}
-.logo{width:52px;height:52px;background:#1B2A4A;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#F5C518;font-size:22px;font-weight:900;flex-shrink:0}
+.logo{width:58px;height:58px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.logo img{width:100%;height:100%;object-fit:contain;display:block}
 h1{font-size:20px;color:#1B2A4A;margin:0}.sub{font-size:11px;color:#94A3B8;margin-top:3px}
 .sec{margin-bottom:16px}.sec-t{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#1B2A4A;border-bottom:2px solid #F5C518;padding-bottom:3px;margin-bottom:10px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px}.fl{font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;margin-bottom:2px}.fv{color:#1E293B;font-size:13px}
@@ -1469,7 +1451,7 @@ h1{font-size:20px;color:#1B2A4A;margin:0}.sub{font-size:11px;color:#94A3B8;margi
 .sig-b{border-top:2px solid #1B2A4A;padding-top:6px;text-align:center;font-size:11px;color:#64748B;text-transform:uppercase}
 .foot{margin-top:24px;text-align:center;font-size:10px;color:#94A3B8;border-top:1px solid #E2E8F0;padding-top:10px}
 @media print{body{padding:14px}}</style></head><body>
-<div class="hdr"><div class="logo">A</div><div><h1>Itajaí Agrifut</h1><p class="sub">CNPJ ${CNPJ} · itajaiesporteclube@gmail.com · (47) 99777-6191</p></div></div>
+<div class="hdr"><div class="logo"><img src="${getLogoSrc()}" alt="Agrifut Itajaí EC"/></div><div><h1>Itajaí Agrifut</h1><p class="sub">CNPJ ${CNPJ} · itajaiesporteclube@gmail.com · (47) 99777-6191</p></div></div>
 <div class="sec"><div class="sec-t">Dados do Atleta</div><div class="grid">
 <div><p class="fl">Nome Completo</p><p class="fv">${a.nomeAtleta||"—"}</p></div>
 <div><p class="fl">Posição</p><p class="fv">${a.posicao||"—"}</p></div>
