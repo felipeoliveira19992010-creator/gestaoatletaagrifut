@@ -86,6 +86,34 @@ const fmtTel = v => { const d=v.replace(/\D/g,"").slice(0,11); if(!d)return""; i
 const fmtCard = v => v.replace(/\D/g,"").slice(0,16).replace(/(\d{4})(?=\d)/g,"$1 ");
 const fmtExp = v => { const d=v.replace(/\D/g,"").slice(0,4); return d.length>2?d.slice(0,2)+"/"+d.slice(2):d; };
 const fmtR = v => v ? `R$ ${Number(v).toFixed(2).replace(".",",")}` : "-";
+const sortName = (a,b) => (a.nomeAtleta||"").localeCompare(b.nomeAtleta||"", "pt-BR", {sensitivity:"base"});
+const isBirthdayToday = a => {
+  if(!a.dataNasc) return false;
+  const [,m,d]=a.dataNasc.split("-");
+  const today=tod();
+  return today.slice(5,10)===`${m}-${d}`;
+};
+const rangePres = (base, mode) => {
+  const d=new Date(`${base}T12:00:00`);
+  let start=new Date(d), end=new Date(d), label="Dia";
+  if(mode==="semana"){
+    const day=(d.getDay()+6)%7;
+    start.setDate(d.getDate()-day);
+    end=new Date(start);end.setDate(start.getDate()+6);
+    label="Semana";
+  } else if(mode==="mes"){
+    start=new Date(d.getFullYear(),d.getMonth(),1,12);
+    end=new Date(d.getFullYear(),d.getMonth()+1,0,12);
+    label="Mês";
+  } else if(mode==="semestre"){
+    const firstMonth=d.getMonth()<6?0:6;
+    start=new Date(d.getFullYear(),firstMonth,1,12);
+    end=new Date(d.getFullYear(),firstMonth+6,0,12);
+    label="Semestre";
+  }
+  const iso=x=>x.toISOString().slice(0,10);
+  return {start:iso(start),end:iso(end),label};
+};
 const genToken = () => "AGF"+Date.now().toString(36).toUpperCase()+Math.random().toString(36).slice(2,6).toUpperCase();
 const genTxn = () => "TXN-"+Date.now().toString(36).toUpperCase().slice(-8);
 const catN = c => parseInt((c||"").replace(/\D/g,""))||0;
@@ -143,6 +171,7 @@ h1{font-size:20px;color:#1B2A4A}
 <div><div class="fl">Posição</div><div class="fv">${a.posicao||"—"}</div></div>
 <div><div class="fl">Data de Nascimento</div><div class="fv">${fmtD(a.dataNasc)} (${a.age} anos)</div></div>
 <div><div class="fl">CPF</div><div class="fv">${a.cpfAtleta||"—"}</div></div>
+<div><div class="fl">RG</div><div class="fv">${a.rgAtletaNum||"—"}</div></div>
 <div><div class="fl">Telefone</div><div class="fv">${a.telAtleta||"—"}</div></div>
 <div><div class="fl">Escola / Série</div><div class="fv">${a.escola||"—"}${a.serie?" — "+a.serie:""}</div></div>
 <div><div class="fl">Categoria / Projeto</div><div class="fv">${a.categoria||"—"} · ${a.projeto||"—"}</div></div>
@@ -451,13 +480,14 @@ function AthCard({a,pagamentos,onSelect,onWA,onMig,canMig}) {
 }
 
 // ── BLANK ─────────────────────────────────────────────────
-const BLANK={nomeAtleta:"",cpfAtleta:"",posicao:"",dataNasc:"",endereco:"",bairro:"",cidade:"Itajaí",escola:"",serie:"",telAtleta:"",emailAtleta:"",foto:null,categoria:"",projeto:"",nomeResp:"",telResp:"",emailResp:"",relacao:"",cpfResp:"",docResp:"",contatoEmerg:"",telEmerg:"",rgAtleta:null,rgResp:null,comprResid:null,alergia:"nao",alergiaDesc:"",laudo:null,neurodivergente:false,medicamento:"nao",medicamentoDesc:"",termoAceito:false,imagemAceito:false,dataMatricula:tod()};
+const BLANK={nomeAtleta:"",cpfAtleta:"",rgAtletaNum:"",posicao:"",dataNasc:"",endereco:"",bairro:"",cidade:"Itajaí",escola:"",serie:"",telAtleta:"",emailAtleta:"",foto:null,categoria:"",projeto:"",nomeResp:"",telResp:"",emailResp:"",relacao:"",cpfResp:"",docResp:"",contatoEmerg:"",telEmerg:"",rgAtleta:null,rgResp:null,comprResid:null,alergia:"nao",alergiaDesc:"",laudo:null,neurodivergente:false,medicamento:"nao",medicamentoDesc:"",termoAceito:false,imagemAceito:false,dataMatricula:tod()};
 
 // ═══════════════════════════════════════════════════════════
 export default function App() {
   const [user,setUser]=useState(null);
   const [athletes,setAthletes]=useState([]);
   const [pagamentos,setPagamentos]=useState([]);
+  const [finHist,setFinHist]=useState([]);
   const [presencas,setPresencas]=useState([]);
   const [camps,setCamps]=useState([]);
   const [profs,setProfs]=useState([{id:"p1",nome:"Professor Demo",user:"prof",pass:"prof123",projeto:"Academy",categoria:"Sub-13"}]);
@@ -474,8 +504,9 @@ export default function App() {
   const [editAth,setEditAth]=useState(null);
   const [migAth,setMigAth]=useState(null);
   const [migC,setMigC]=useState("");const[migP,setMigP]=useState("");
-  const [presDate,setPresDate]=useState(tod());const[presProj,setPresProj]=useState("");const[presGi,setPresGi]=useState(null);const[presCat,setPresCat]=useState("");
+  const [presDate,setPresDate]=useState(tod());const[presProj,setPresProj]=useState("");const[presGi,setPresGi]=useState(null);const[presCat,setPresCat]=useState("");const[presExpPer,setPresExpPer]=useState("dia");
   const [showPgto,setShowPgto]=useState(false);const[pgtoF,setPgtoF]=useState({tipo:"",desc:"",valor:"",status:"Pendente",data:tod(),aId:"",comp:null});
+  const [editPgto,setEditPgto]=useState(null);
   const [fPSt,setFPSt]=useState("all");const[fPTp,setFPTp]=useState("all");const[fPCats,setFPCats]=useState([]);
   const [showCamp,setShowCamp]=useState(false);const[campF,setCampF]=useState({nome:"",data:"",cat:"",proj:""});const[selCamp,setSelCamp]=useState(null);
   const [showEv,setShowEv]=useState(false);const[evF,setEvF]=useState({nome:"",data:"",local:"",taxa:""});
@@ -496,7 +527,7 @@ export default function App() {
   useEffect(()=>{
     (async()=>{
       let aths=[];
-      for(const [k,fn] of [["agrifut-a9",setAthletes],["agrifut-p9",setPagamentos],["agrifut-pr9",setPresencas],["agrifut-c9",setCamps],["agrifut-pf9",setProfs]]){
+      for(const [k,fn] of [["agrifut-a9",setAthletes],["agrifut-p9",setPagamentos],["agrifut-fh9",setFinHist],["agrifut-pr9",setPresencas],["agrifut-c9",setCamps],["agrifut-pf9",setProfs],["agrifut-i9",setItens]]){
         try{const r=await window.storage.get(k);if(r){const parsed=JSON.parse(r.value);fn(parsed);if(k==="agrifut-a9")aths=parsed;}}catch(e){}
       }
       // Auto-login via URL token
@@ -511,11 +542,19 @@ export default function App() {
 
   const sA=async l=>{try{await window.storage.set("agrifut-a9",JSON.stringify(l));}catch(e){}};
   const sP=async l=>{try{await window.storage.set("agrifut-p9",JSON.stringify(l));}catch(e){}};
+  const sFH=async l=>{try{await window.storage.set("agrifut-fh9",JSON.stringify(l));}catch(e){}};
   const sPr=async l=>{try{await window.storage.set("agrifut-pr9",JSON.stringify(l));}catch(e){}};
   const sC=async l=>{try{await window.storage.set("agrifut-c9",JSON.stringify(l));}catch(e){}};
   const sPf=async l=>{try{await window.storage.set("agrifut-pf9",JSON.stringify(l));}catch(e){}};
+  const sI=async l=>{try{await window.storage.set("agrifut-i9",JSON.stringify(l));}catch(e){}};
   const t2=(m,d=3000)=>{setToast(m);setTimeout(()=>setToast(""),d);};
   const sF=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const addFinHist=async(action,pg,extra="")=>{
+    const ath=athletes.find(a=>a.id===pg?.aId);
+    const entry={id:Date.now()+Math.random(),data:new Date().toISOString(),action,aId:pg?.aId||"",atleta:ath?ath.nomeAtleta:"—",tipo:pg?.tipo||"",valor:pg?.valor||"",status:pg?.status||"",extra};
+    const nl=[entry,...finHist].slice(0,300);
+    setFinHist(nl);await sFH(nl);
+  };
 
   const handleLogin=({role,id,nome,tab:t})=>{setUser({role,id,nome});setTab(t||"athletes");};
 
@@ -546,25 +585,34 @@ export default function App() {
   const saveEdit=async()=>{const nl=athletes.map(a=>a.id===editAth.id?{...editAth,age:ageOf(editAth.dataNasc)}:a);setAthletes(nl);await sA(nl);setEditAth(null);t2("✅ Atualizado!");};
   const doMig=async()=>{const nl=athletes.map(a=>a.id===migAth.id?{...a,categoria:migC||a.categoria,projeto:migP||a.projeto}:a);setAthletes(nl);await sA(nl);setMigAth(null);t2("✅ Migrado!");};
   const delA=async id=>{if(!confirm("Remover atleta?"))return;const nl=athletes.filter(a=>a.id!==id);setAthletes(nl);await sA(nl);setSelAth(null);};
-  const onPaid=async txnCode=>{if(!stripeTarget)return;const nl=pagamentos.map(p=>p.id===stripeTarget.pgto.id?{...p,status:"Pago",txn:txnCode}:p);setPagamentos(nl);await sP(nl);t2("✅ Pagamento confirmado!");setStripeTarget(null);};
+  const onPaid=async txnCode=>{if(!stripeTarget)return;const updated={...stripeTarget.pgto,status:"Pago",txn:txnCode};const nl=pagamentos.map(p=>p.id===stripeTarget.pgto.id?updated:p);setPagamentos(nl);await sP(nl);await addFinHist("Pagamento confirmado",updated,txnCode);t2("✅ Pagamento confirmado!");setStripeTarget(null);};
 
-  const addPgto=async()=>{if(!pgtoF.tipo||!pgtoF.aId)return;const txn=pgtoF.comp?genTxn():"";const np={...pgtoF,id:Date.now(),txn};const nl=[...pagamentos,np];setPagamentos(nl);await sP(nl);if(np.comp){const ath=athletes.find(x=>x.id===np.aId);const msg=`📋 *Comprovante*\n🔑 Código: *${txn}*\nAtleta: ${ath?ath.nomeAtleta:"—"}\nTipo: ${np.tipo}\nValor: ${np.valor?fmtR(np.valor):"-"}`;const el=document.createElement("a");el.href=np.comp.data;el.download=np.comp.name;el.click();setTimeout(()=>waOpen(WA_ADMIN,msg),600);}setShowPgto(false);setPgtoF({tipo:"",desc:"",valor:"",status:"Pendente",data:tod(),aId:"",comp:null});t2("✅ Registro adicionado!");};
-  const updPgto=async(id,status)=>{const nl=pagamentos.map(p=>p.id===id?{...p,status}:p);setPagamentos(nl);await sP(nl);};
-  const delPgto=async id=>{const nl=pagamentos.filter(p=>p.id!==id);setPagamentos(nl);await sP(nl);};
+  const resetPgtoF=()=>setPgtoF({tipo:"",desc:"",valor:"",status:"Pendente",data:tod(),aId:"",comp:null});
+  const addPgto=async()=>{if(!pgtoF.tipo||!pgtoF.aId)return;const txn=pgtoF.comp?genTxn():"";const np={...pgtoF,id:Date.now(),txn};const nl=[...pagamentos,np];setPagamentos(nl);await sP(nl);await addFinHist("Registro criado",np);if(np.comp){const ath=athletes.find(x=>x.id===np.aId);const msg=`📋 *Comprovante*\n🔑 Código: *${txn}*\nAtleta: ${ath?ath.nomeAtleta:"—"}\nTipo: ${np.tipo}\nValor: ${np.valor?fmtR(np.valor):"-"}`;const el=document.createElement("a");el.href=np.comp.data;el.download=np.comp.name;el.click();setTimeout(()=>waOpen(WA_ADMIN,msg),600);}setShowPgto(false);resetPgtoF();t2("✅ Registro adicionado!");};
+  const openEditPgto=pg=>{setEditPgto(pg);setPgtoF({...pg});setShowPgto(true);};
+  const saveEditPgto=async()=>{if(!editPgto||!pgtoF.tipo||!pgtoF.aId)return;const updated={...editPgto,...pgtoF,aId:Number(pgtoF.aId)};const nl=pagamentos.map(p=>p.id===editPgto.id?updated:p);setPagamentos(nl);await sP(nl);await addFinHist("Registro editado",updated,`Antes: ${fmtR(editPgto.valor)} / ${editPgto.status}`);setEditPgto(null);setShowPgto(false);resetPgtoF();t2("✅ Registro financeiro atualizado!");};
+  const updPgto=async(id,status)=>{let changed=null;const nl=pagamentos.map(p=>{if(p.id!==id)return p;changed={...p,status};return changed;});setPagamentos(nl);await sP(nl);if(changed)await addFinHist("Status alterado",changed,status);};
+  const delPgto=async id=>{const old=pagamentos.find(p=>p.id===id);const nl=pagamentos.filter(p=>p.id!==id);setPagamentos(nl);await sP(nl);if(old)await addFinHist("Registro removido",old);};
 
-  const handlePresGi=i=>{setPresGi(i);const g=PGROUPS[presProj]?.[i];if(g&&g.cats.length===1){setPresCat(g.cats[0]);}else{setPresCat("");}};
-  const getPres=()=>presencas.find(p=>p.data===presDate&&p.proj===presProj&&p.cat===presCat)||{presentes:[]};
+  const handlePresGi=i=>{setPresGi(i);const g=PGROUPS[presProj]?.[i];if(presProj==="Conexão"&&g){setPresCat(g.label);}else if(g&&g.cats.length===1){setPresCat(g.cats[0]);}else{setPresCat("");}};
+  const getPres=(data=presDate)=>presencas.find(p=>p.data===data&&p.proj===presProj&&p.cat===presCat)||{presentes:[]};
+  const presCats=()=>{const g=presGi!==null?(PGROUPS[presProj]||[])[presGi]:null;if(presProj==="Conexão"&&g)return g.cats;return presCat?[presCat]:[];};
   const togPres=async aId=>{const cur=getPres();const pres=cur.presentes.includes(aId)?cur.presentes.filter(x=>x!==aId):[...cur.presentes,aId];const ex=presencas.find(p=>p.data===presDate&&p.proj===presProj&&p.cat===presCat);const entry={data:presDate,proj:presProj,cat:presCat,id:Date.now(),presentes:pres};const nl=ex?presencas.map(p=>(p.data===presDate&&p.proj===presProj&&p.cat===presCat)?{...p,presentes:pres}:p):[...presencas,entry];setPresencas(nl);await sPr(nl);};
-  const expPres=()=>{const rec=getPres();const al=athletes.filter(a=>a.projeto===presProj&&a.categoria===presCat);expCSV([["Nome","Posição","Categoria","Projeto","Presença","Data"],...al.map(a=>[a.nomeAtleta,a.posicao||"",a.categoria,a.projeto,rec.presentes.includes(a.id)?"Presente":"Ausente",fmtD(presDate)])],`presenca_${presProj}_${presCat}_${presDate}.csv`);t2("📊 Planilha baixada!");};
+  const expPres=()=>{const {start,end,label}=rangePres(presDate,presExpPer);const al=athletes.filter(a=>a.projeto===presProj&&presCats().includes(a.categoria)).sort(sortName);const recDates=presencas.filter(p=>p.proj===presProj&&p.cat===presCat&&p.data>=start&&p.data<=end).map(p=>p.data);const dates=(presExpPer==="dia"?[presDate]:[...new Set(recDates)].sort());const rows=[];dates.forEach(dt=>{const rec=getPres(dt);al.forEach(a=>rows.push([a.nomeAtleta,a.posicao||"",a.categoria,a.projeto,rec.presentes.includes(a.id)?"Presente":"Ausente",fmtD(dt)]));});expCSV([["Nome","Posição","Categoria","Projeto","Presença","Data"],...rows],`presenca_${presProj}_${presCat}_${label}_${start}_${end}.csv`);t2("📊 Planilha baixada!");};
 
   const addCamp=async()=>{if(!campF.nome)return;const nl=[...camps,{...campF,id:Date.now(),inscritos:[],eventos:[]}];setCamps(nl);await sC(nl);setShowCamp(false);setCampF({nome:"",data:"",cat:"",proj:""});t2("✅ Campeonato criado!");};
   const delCamp=async id=>{const nl=camps.filter(c=>c.id!==id);setCamps(nl);await sC(nl);setSelCamp(null);};
-  const togInsc=async(camp,aId)=>{const hasPaid=pagamentos.some(pg=>pg.aId===aId&&pg.tipo==="Taxa de Inscrição"&&pg.status==="Pago");if(!hasPaid){t2("⚠️ Atleta sem taxa paga!");return;}const ins=camp.inscritos.includes(aId)?camp.inscritos.filter(x=>x!==aId):[...camp.inscritos,aId];const nl=camps.map(c=>c.id===camp.id?{...c,inscritos:ins}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===camp.id));};
+  const hasInscricaoOk=aId=>pagamentos.some(pg=>pg.aId===aId&&pg.tipo==="Taxa de Inscrição"&&(pg.status==="Pago"||pg.status==="Isento"));
+  const hasTaxaGeralOk=aId=>pagamentos.some(pg=>pg.aId===aId&&pg.tipo!=="Uniforme"&&(pg.status==="Pago"||pg.status==="Isento"));
+  const taxaLabel=aId=>{const pg=pagamentos.find(x=>x.aId===aId&&x.tipo!=="Uniforme"&&(x.status==="Pago"||x.status==="Isento"));return pg?`${pg.tipo}: ${pg.status}`:"Sem taxa";};
+  const togInsc=async(camp,aId)=>{if(!hasInscricaoOk(aId)){t2("⚠️ Atleta sem taxa de inscrição paga ou isenta!");return;}const ins=camp.inscritos.includes(aId)?camp.inscritos.filter(x=>x!==aId):[...camp.inscritos,aId];const nl=camps.map(c=>c.id===camp.id?{...c,inscritos:ins}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===camp.id));};
   const addEv=async()=>{if(!evF.nome||!selCamp)return;const ev={...evF,id:Date.now(),convocados:[]};const nl=camps.map(c=>c.id===selCamp.id?{...c,eventos:[...(c.eventos||[]),ev]}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===selCamp.id));setShowEv(false);setEvF({nome:"",data:"",local:"",taxa:""});t2("✅ Evento criado!");};
-  const togConv=async(camp,evId,aId)=>{if(!camp.inscritos.includes(aId)){t2("⚠️ Atleta não inscrito!");return;}const nl=camps.map(c=>c.id===camp.id?{...c,eventos:c.eventos.map(ev=>ev.id===evId?{...ev,convocados:ev.convocados.includes(aId)?ev.convocados.filter(x=>x!==aId):[...ev.convocados,aId]}:ev)}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===camp.id));};
+  const togConv=async(camp,evId,aId)=>{if(!camp.inscritos.includes(aId)&&!hasTaxaGeralOk(aId)){t2("⚠️ Atleta sem inscrição ou taxa paga/isenta!");return;}const nl=camps.map(c=>c.id===camp.id?{...c,eventos:c.eventos.map(ev=>ev.id===evId?{...ev,convocados:ev.convocados.includes(aId)?ev.convocados.filter(x=>x!==aId):[...ev.convocados,aId]}:ev)}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===camp.id));};
   const delEv=async(cId,eId)=>{const nl=camps.map(c=>c.id===cId?{...c,eventos:c.eventos.filter(e=>e.id!==eId)}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===cId));};
   const expConv=(camp,ev)=>{const list=ev.convocados.map((id,i)=>{const a=athletes.find(x=>x.id===id);return`${i+1}. ${a?a.nomeAtleta:"?"} (${a?a.categoria:"—"}${a&&a.posicao?" · "+a.posicao:""})`;});const msg=`🏆 *${camp.nome}*\n⚽ *${ev.nome}*\n📅 ${fmtD(ev.data)}${ev.local?"\n📍 "+ev.local:""}${ev.taxa?"\n💰 "+fmtR(ev.taxa):""}\n\n👕 *CONVOCADOS (${ev.convocados.length}):*\n${list.join("\n")}\n\n_Itajaí Agrifut 🟡⚫_`;waOpen(WA_ADMIN,msg);};
-  const addProf=async()=>{if(!profF.nome||!profF.user||!profF.pass)return;const nl=[...profs,{...profF,id:"p"+Date.now()}];setProfs(nl);await sPf(nl);setShowProf(false);setProfF({nome:"",user:"",pass:"",projeto:"",categoria:""});t2("✅ Professor adicionado!");};
+  const resetProfF=()=>setProfF({nome:"",user:"",pass:"",projeto:"",categoria:""});
+  const openEditProf=pf=>{setProfF({...pf});setShowProf(true);};
+  const addProf=async()=>{if(!profF.nome||!profF.user||!profF.pass)return;const item={...profF,id:profF.id||"p"+Date.now()};const nl=profF.id?profs.map(p=>p.id===profF.id?item:p):[...profs,item];setProfs(nl);await sPf(nl);setShowProf(false);resetProfF();t2(profF.id?"✅ Professor atualizado!":"✅ Professor adicionado!");};
   const eligibleForCamp=camp=>{const mx=catN(camp.cat);return athletes.filter(a=>(!camp.proj||a.projeto===camp.proj)&&(!camp.cat||catN(a.categoria)<=mx));};
   const canMig=user&&(user.role==="admin"||user.role==="professor");
   const doWA=a=>waOpen("55"+a.telResp.replace(/\D/g,""),`Olá ${a.nomeResp}! Contato Agrifut 🟡⚫`);
@@ -590,8 +638,11 @@ export default function App() {
         {a!==""&&a<6&&<p style={{gridColumn:"1/-1",color:R,fontSize:12,fontWeight:700,margin:0}}>⚠️ Mínimo 6 anos.</p>}
         {a!==""&&a>18&&<p style={{gridColumn:"1/-1",color:R,fontSize:12,fontWeight:700,margin:0}}>⚠️ Máximo 18 anos.</p>}
         <Inp label="CPF do Atleta" req value={form.cpfAtleta} onChange={v=>sF("cpfAtleta",fmtCPF(v))} placeholder="000.000.000-00" note={(form.cpfAtleta?form.cpfAtleta.replace(/\D/g,"").length:0)+"/11"}/>
+        <Inp label="RG do Atleta" value={form.rgAtletaNum} onChange={v=>sF("rgAtletaNum",v)} placeholder="RG para competições"/>
         <Inp label="Telefone (WhatsApp)" req value={form.telAtleta} onChange={v=>sF("telAtleta",fmtTel(v))} placeholder="(47) 9xxxx-xxxx"/>
         <Sel label="Posição" value={form.posicao} onChange={v=>sF("posicao",v)} opts={POSICOES}/>
+        <Sel label="Categoria" value={form.categoria} onChange={v=>sF("categoria",v)} opts={CATS}/>
+        <Sel label="Projeto" value={form.projeto} onChange={v=>sF("projeto",v)} opts={PROJS}/>
         <Inp label="Escola" value={form.escola} onChange={v=>sF("escola",v)}/>
         <Inp label="Série" value={form.serie} onChange={v=>sF("serie",v)}/>
         <Inp label="Endereço" value={form.endereco} onChange={v=>sF("endereco",v)} full/>
@@ -602,9 +653,6 @@ export default function App() {
           <label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",display:"block",marginBottom:5}}>Foto</label>
           <input type="file" accept="image/*" style={{fontSize:12}} onChange={async e=>{if(e.target.files[0]){const d=await readB64(e.target.files[0]);setForm(f=>({...f,foto:d.data}));}}}/>
           {form.foto&&<img src={form.foto} alt="" style={{width:74,height:74,objectFit:"cover",borderRadius:10,marginTop:8,border:`3px solid ${G}`}}/>}
-        </div>
-        <div style={{gridColumn:"1/-1",background:"#FFF9E6",borderRadius:10,padding:10,border:`1px solid ${G}44`}}>
-          <p style={{margin:0,fontSize:12,color:"#92400E",fontWeight:600}}>ℹ️ Categoria e projeto definidos pelo professor após o cadastro.</p>
         </div>
       </div>
     );
@@ -704,6 +752,7 @@ export default function App() {
     const athList=list=>list.length===0
       ?<div style={{background:"white",borderRadius:12,padding:40,textAlign:"center"}}><p style={{color:"#888",fontWeight:600}}>Nenhum atleta.</p></div>
       :<div style={{display:"grid",gap:8}}>{list.map(a=><AthCard key={a.id} a={a} pagamentos={pagamentos} onSelect={setSelAth} onWA={doWA} onMig={doMigOpen} canMig={canMig}/>)}</div>;
+    const bdays=athletes.filter(isBirthdayToday).sort(sortName);
 
     if(projV==="all") return <div style={{maxWidth:1100,margin:"24px auto",padding:"0 16px"}}>{searchBar(<><span style={{fontWeight:800,color:N,fontSize:15}}>Todos</span><Badge text={athletes.length+" atletas"} color={N}/></>)}{athList(listAll(()=>true))}</div>;
     if(projV&&projV!=="all"){
@@ -712,6 +761,14 @@ export default function App() {
     }
     return (
       <div style={{maxWidth:1100,margin:"24px auto",padding:"0 16px"}}>
+        {bdays.length>0&&(
+          <div style={{background:"white",borderRadius:12,padding:14,boxShadow:"0 2px 8px #0001",marginBottom:16,borderLeft:`4px solid ${G}`}}>
+            <p style={{margin:"0 0 8px",fontWeight:800,fontSize:14,color:N}}>🎂 Aniversariantes do Dia</p>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+              {bdays.map(a=><button key={a.id} onClick={()=>setSelAth(a)} style={{background:"#FFFBEB",border:`1px solid ${G}66`,borderRadius:8,padding:"7px 11px",cursor:"pointer",textAlign:"left"}}><span style={{display:"block",fontWeight:800,color:N,fontSize:13}}>{a.nomeAtleta}</span><span style={{display:"block",fontSize:11,color:"#92400E"}}>{a.projeto||"Sem projeto"} · {a.categoria||"Sem categoria"}</span></button>)}
+            </div>
+          </div>
+        )}
         <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
           <button onClick={()=>{setProjV("all");setSrch("");}} style={{background:N,color:G,border:"none",borderRadius:10,padding:"10px 20px",fontWeight:800,fontSize:14,cursor:"pointer"}}>👥 Todos ({athletes.length})</button>
           {athletes.filter(a=>!a.projeto).length>0&&<button onClick={()=>setProjV("all")} style={{background:"#F1F5F9",color:"#64748B",border:"2px solid #E2E8F0",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer"}}>⚠️ Sem projeto: {athletes.filter(a=>!a.projeto).length}</button>}
@@ -736,15 +793,24 @@ export default function App() {
 
   // ── Presença ──────────────────────────────────────────
   const renderPresenca=()=>{
-    const groups=presProj?(PGROUPS[presProj]||[]):[];const selGroup=presGi!==null?groups[presGi]:null;const groupCats=selGroup?selGroup.cats:[];const needCatSel=groupCats.length>1;
-    const presAlunos=athletes.filter(a=>a.projeto===presProj&&a.categoria===presCat);const rec=getPres();
+    const groups=presProj?(PGROUPS[presProj]||[]):[];const selGroup=presGi!==null?groups[presGi]:null;const groupCats=selGroup?selGroup.cats:[];const needCatSel=groupCats.length>1&&presProj!=="Conexão";
+    const presAlunos=athletes.filter(a=>a.projeto===presProj&&presCats().includes(a.categoria)).sort(sortName);const rec=getPres();
     return (
       <div style={{maxWidth:900,margin:"24px auto",padding:"0 16px"}}>
         <div style={{background:"white",borderRadius:14,padding:18,marginBottom:14,boxShadow:"0 2px 8px #0001"}}>
           <p style={{fontWeight:800,fontSize:14,color:N,margin:"0 0 12px"}}>📅 Selecionar Turma</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:12,alignItems:"flex-end",marginBottom:presProj?12:0}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:12,alignItems:"flex-end",marginBottom:presProj?12:0}}>
             <Sel label="Projeto" value={presProj} onChange={v=>{setPresProj(v);setPresGi(null);setPresCat("");}} opts={user&&user.role==="professor"&&user.proj?[user.proj]:PROJS}/>
             <Inp label="Data" type="date" value={presDate} onChange={setPresDate}/>
+            <div style={{display:"flex",flexDirection:"column",gap:3}}>
+              <label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:.5}}>Exportar</label>
+              <select value={presExpPer} onChange={e=>setPresExpPer(e.target.value)} style={{border:"1.5px solid #ddd",borderRadius:8,padding:"8px 11px",fontSize:14,outline:"none",background:"white",width:"100%"}}>
+                <option value="dia">Dia</option>
+                <option value="semana">Semana</option>
+                <option value="mes">Mês</option>
+                <option value="semestre">Semestre</option>
+              </select>
+            </div>
             {presProj&&presCat&&<Btn color={BL} onClick={expPres} xst={{whiteSpace:"nowrap"}}>⬇ Baixar Planilha</Btn>}
           </div>
           {presProj&&groups.length>0&&(
@@ -767,7 +833,7 @@ export default function App() {
           :(
             <div style={{background:"white",borderRadius:14,padding:18,boxShadow:"0 2px 8px #0001"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
-                <div><p style={{fontWeight:800,fontSize:15,color:N,margin:0}}>{presProj} — {presCat} · {fmtD(presDate)}</p><p style={{fontSize:12,color:"#64748B",margin:0}}>{rec.presentes.length}/{presAlunos.length}</p></div>
+                <div><p style={{fontWeight:800,fontSize:15,color:N,margin:0}}>{presProj} — {presCat} · {fmtD(presDate)}</p><p style={{fontSize:12,color:"#64748B",margin:0}}>{rec.presentes.length}/{presAlunos.length} · ordem alfabética</p></div>
                 <div style={{display:"flex",gap:6}}><Badge text={"✅ "+rec.presentes.length} color="#059669"/><Badge text={"❌ "+(presAlunos.length-rec.presentes.length)} color={R}/></div>
               </div>
               {presAlunos.length===0?<p style={{color:"#888",textAlign:"center",padding:24}}>Nenhum atleta nesta turma.</p>
@@ -785,16 +851,16 @@ export default function App() {
       {camps.length===0?<div style={{background:"white",borderRadius:14,padding:48,textAlign:"center",boxShadow:"0 2px 8px #0001"}}><p style={{fontSize:40,margin:0}}>🏆</p><p style={{color:"#888",fontWeight:600}}>Nenhum campeonato</p></div>
         :<div style={{display:"grid",gap:12}}>{camps.map(c=><div key={c.id} style={{background:"white",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 8px #0001"}}><div style={{background:N,padding:"13px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}><span style={{fontSize:22}}>🏆</span><div style={{flex:1}}><p style={{color:"white",fontWeight:800,fontSize:15,margin:0}}>{c.nome}</p><p style={{color:G,fontSize:12,margin:0}}>{fmtD(c.data)}{c.cat?" · "+c.cat:""}{c.proj?" · "+c.proj:""}</p></div><Badge text={"📋 "+c.inscritos.length} color={G}/><Badge text={"⚽ "+(c.eventos||[]).length+" eventos"} color="#86EFAC"/><Btn small color={G} onClick={()=>setSelCamp(c)}>Gerenciar</Btn>{user&&user.role==="admin"&&<Btn small color={R} outline onClick={()=>delCamp(c.id)}>🗑</Btn>}</div></div>)}</div>}
       {showCamp&&<Modal title="➕ Novo Campeonato" onClose={()=>setShowCamp(false)}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}><Inp label="Nome" req value={campF.nome} onChange={v=>setCampF(f=>({...f,nome:v}))} full/><Inp label="Data" type="date" value={campF.data} onChange={v=>setCampF(f=>({...f,data:v}))}/><Sel label="Categoria máx." value={campF.cat} onChange={v=>setCampF(f=>({...f,cat:v}))} opts={CATS}/><Sel label="Projeto" value={campF.proj} onChange={v=>setCampF(f=>({...f,proj:v}))} opts={PROJS}/></div><div style={{display:"flex",gap:10}}><Btn color={N} disabled={!campF.nome} onClick={addCamp}>✅ Criar</Btn><Btn outline color="#888" onClick={()=>setShowCamp(false)}>Cancelar</Btn></div></Modal>}
-      {selCamp&&(()=>{const c=selCamp;const elig=eligibleForCamp(c);return(
+      {selCamp&&(()=>{const c=selCamp;const elig=eligibleForCamp(c).sort(sortName);return(
         <Modal title={"🏆 "+c.nome} onClose={()=>setSelCamp(null)} wide>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
             <div>
               <p style={{fontWeight:800,fontSize:13,color:N,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:1}}>📋 Inscrições</p>
               <div style={{maxHeight:300,overflowY:"auto",display:"flex",flexDirection:"column",gap:5}}>
-                {elig.map(a=>{const paid=pagamentos.some(pg=>pg.aId===a.id&&pg.tipo==="Taxa de Inscrição"&&pg.status==="Pago");const insc=c.inscritos.includes(a.id);const bg=insc?"#F0FFF4":paid?"white":"#FFF9F9";const bd=insc?"#86EFAC":paid?"#E2E8F0":R+"33";return(
-                  <div key={a.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,background:bg,border:`1.5px solid ${bd}`,opacity:(!paid&&!insc)?0.6:1}}>
+                {elig.map(a=>{const pgIns=pagamentos.find(pg=>pg.aId===a.id&&pg.tipo==="Taxa de Inscrição"&&(pg.status==="Pago"||pg.status==="Isento"));const ok=!!pgIns;const insc=c.inscritos.includes(a.id);const bg=insc?"#F0FFF4":ok?"white":"#FFF9F9";const bd=insc?"#86EFAC":ok?"#E2E8F0":R+"33";return(
+                  <div key={a.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,background:bg,border:`1.5px solid ${bd}`,opacity:(!ok&&!insc)?0.6:1}}>
                     <div style={{flex:1}}><span style={{fontSize:13,fontWeight:600,color:N}}>{a.nomeAtleta}</span> <span style={{fontSize:11,color:"#94A3B8"}}>({a.categoria}{a.posicao?" · "+a.posicao:""})</span></div>
-                    {(!paid&&!insc)&&<span style={{fontSize:10,color:R,fontWeight:700}}>Sem taxa</span>}
+                    <span style={{fontSize:10,color:ok?(pgIns.status==="Isento"?OR:"#059669"):R,fontWeight:700}}>{ok?pgIns.status:"Sem taxa"}</span>
                     <button onClick={()=>togInsc(c,a.id)} style={{background:insc?R:GR,color:"white",border:"none",borderRadius:6,padding:"4px 9px",cursor:"pointer",fontWeight:700,fontSize:11}}>{insc?"−":"+"}</button>
                   </div>
                 );})}
@@ -808,13 +874,13 @@ export default function App() {
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}><div><p style={{fontWeight:800,fontSize:14,color:N,margin:0}}>{ev.nome}</p><p style={{fontSize:12,color:"#64748B",margin:0}}>{fmtD(ev.data)}{ev.local?" · "+ev.local:""}{ev.taxa?" · "+fmtR(ev.taxa):""}</p></div><div style={{display:"flex",gap:5}}><Btn small color={GR} onClick={()=>expConv(c,ev)}>📲</Btn><button onClick={()=>delEv(c.id,ev.id)} style={{background:"none",border:"none",color:R,cursor:"pointer",fontSize:14}}>🗑</button></div></div>
                     <p style={{fontSize:11,fontWeight:700,color:"#64748B",margin:"0 0 5px",textTransform:"uppercase"}}>Convocados ({ev.convocados.length})</p>
                     <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>{ev.convocados.map(id=>{const a=athletes.find(x=>x.id===id);return a?<span key={id} style={{background:BL+"15",color:BL,border:`1px solid ${BL}44`,borderRadius:6,padding:"2px 7px",fontSize:11,fontWeight:700}}>{a.nomeAtleta}{a.posicao?" · "+a.posicao:""}</span>:null;})}</div>
-                    <details><summary style={{fontSize:12,cursor:"pointer",color:"#64748B",fontWeight:600}}>Selecionar atletas</summary>
-                      <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4,maxHeight:150,overflowY:"auto"}}>{c.inscritos.map(id=>{const a=athletes.find(x=>x.id===id);if(!a)return null;const conv=ev.convocados.includes(id);return(
+                    <details><summary style={{fontSize:12,cursor:"pointer",color:"#64748B",fontWeight:600}}>Selecionar atletas com inscrição ou taxa paga/isenta</summary>
+                      <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4,maxHeight:150,overflowY:"auto"}}>{(()=>{const ids=[...new Set([...c.inscritos,...elig.filter(a=>hasTaxaGeralOk(a.id)).map(a=>a.id)])];return ids.map(id=>{const a=athletes.find(x=>x.id===id);if(!a)return null;const conv=ev.convocados.includes(id);return(
                         <div key={id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:7,background:conv?"#EFF6FF":"white",border:`1px solid ${conv?"#93C5FD":"#E2E8F0"}`}}>
-                          <span style={{flex:1,fontSize:12,fontWeight:600}}>{a.nomeAtleta} <span style={{fontSize:11,color:"#94A3B8"}}>({a.categoria}{a.posicao?" · "+a.posicao:""})</span></span>
+                          <span style={{flex:1,fontSize:12,fontWeight:600}}>{a.nomeAtleta} <span style={{fontSize:11,color:"#94A3B8"}}>({a.categoria}{a.posicao?" · "+a.posicao:""} · {c.inscritos.includes(id)?"Inscrito":taxaLabel(id)})</span></span>
                           <button onClick={()=>togConv(c,ev.id,id)} style={{background:conv?OR:BL,color:"white",border:"none",borderRadius:5,padding:"3px 8px",cursor:"pointer",fontWeight:700,fontSize:11}}>{conv?"Rem.":"Conv."}</button>
                         </div>
-                      );})}</div>
+                      );});})()}</div>
                     </details>
                   </div>
                 ))}</div>}
@@ -826,15 +892,18 @@ export default function App() {
     </div>
   );
 
-  const saveItem = () => {
+  const resetItemF=()=>setItemF({nome:'',categoria:'Item de Venda',preco:'',tamanhos:[],descricao:'',foto:null,qtdInput:{}});
+  const openEditItem=item=>{setItemF({...item,qtdInput:{...(item.qtd||{})}});setShowAddItem(true);};
+  const saveItem = async () => {
     if(!itemF.nome||!itemF.categoria) return;
     const qtd={};
     itemF.tamanhos.forEach(t=>{qtd[t]=Number(itemF.qtdInput[t]||0);});
-    const nl=[...itens,{id:Date.now(),nome:itemF.nome,categoria:itemF.categoria,preco:Number(itemF.preco||0),tamanhos:itemF.tamanhos,qtd,foto:itemF.foto,descricao:itemF.descricao}];
-    setItens(nl);setShowAddItem(false);setItemF({nome:'',categoria:'Item de Venda',preco:'',tamanhos:[],descricao:'',foto:null,qtdInput:{}});t2('✅ Item cadastrado!');
+    const item={id:itemF.id||Date.now(),nome:itemF.nome,categoria:itemF.categoria,preco:Number(itemF.preco||0),tamanhos:itemF.tamanhos,qtd,foto:itemF.foto,descricao:itemF.descricao};
+    const nl=itemF.id?itens.map(i=>i.id===itemF.id?item:i):[...itens,item];
+    setItens(nl);await sI(nl);setShowAddItem(false);resetItemF();t2(itemF.id?'✅ Item atualizado!':'✅ Item cadastrado!');
   };
 
-  const delItem = id => setItens(itens.filter(i=>i.id!==id));
+  const delItem = async id => {const nl=itens.filter(i=>i.id!==id);setItens(nl);await sI(nl);};
 
   const sendPedidoWA = async (item,ath,tam,qtd) => {
     const total=item.preco*Number(qtd||1);
@@ -853,14 +922,15 @@ export default function App() {
     if(ath&&item.preco>0){
       const txn=genTxn();
       const np={id:Date.now(),aId:ath.id,tipo:'Uniforme',desc:`${item.nome} — Tam: ${tam} x${qtd}`,valor:String(total),status:'Pendente',data:tod(),txn,comp:null};
-      const nl=[...pagamentos,np];setPagamentos(nl);await sP(nl);
+      const nl=[...pagamentos,np];setPagamentos(nl);await sP(nl);await addFinHist("Pedido de estoque criado",np);
       t2('✅ Pedido registrado! Código: '+txn);
     }
-    setItens(prev=>prev.map(i=>{
+    const itemList=itens.map(i=>{
       if(i.id!==item.id) return i;
       const nq={...i.qtd};nq[tam]=Math.max(0,(nq[tam]||0)-Number(qtd||1));
       return {...i,qtd:nq};
-    }));
+    });
+    setItens(itemList);await sI(itemList);
     waOpen(WA_ADMIN,msg);
     setPedidoItem(null);setPedidoF({tamanho:'',qtd:'1'});
     if(!ath||item.preco===0) t2('✅ Pedido enviado via WhatsApp!');
@@ -881,7 +951,7 @@ export default function App() {
             ))}
           </div>
           {user&&(user.role==='admin'||user.role==='professor')&&(
-            <Btn color={G} onClick={()=>setShowAddItem(true)} xst={{marginLeft:'auto'}}>+ Cadastrar Item</Btn>
+            <Btn color={G} onClick={()=>{resetItemF();setShowAddItem(true);}} xst={{marginLeft:'auto'}}>+ Cadastrar Item</Btn>
           )}
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:20}}>
@@ -932,7 +1002,10 @@ export default function App() {
                           </Btn>
                         )}
                         {user&&(user.role==='admin'||user.role==='professor')&&(
-                          <button onClick={()=>delItem(item.id)} style={{background:'none',border:`1px solid ${R}44`,borderRadius:6,padding:'5px 10px',color:R,cursor:'pointer',fontSize:12,fontWeight:700}}>🗑</button>
+                          <>
+                            <button onClick={()=>openEditItem(item)} style={{background:'none',border:`1px solid ${N}44`,borderRadius:6,padding:'5px 10px',color:N,cursor:'pointer',fontSize:12,fontWeight:700}}>✏️</button>
+                            <button onClick={()=>delItem(item.id)} style={{background:'none',border:`1px solid ${R}44`,borderRadius:6,padding:'5px 10px',color:R,cursor:'pointer',fontSize:12,fontWeight:700}}>🗑</button>
+                          </>
                         )}
                       </div>
                     </div>
@@ -944,7 +1017,7 @@ export default function App() {
         }
 
         {showAddItem&&(
-          <Modal title="📦 Cadastrar Item" onClose={()=>setShowAddItem(false)}>
+          <Modal title={itemF.id?"📦 Editar Item":"📦 Cadastrar Item"} onClose={()=>{setShowAddItem(false);resetItemF();}}>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,marginBottom:16}}>
               <Inp label="Nome do Item" req value={itemF.nome} onChange={v=>setItemF(f=>({...f,nome:v}))} full/>
               <Sel label="Categoria" value={itemF.categoria} onChange={v=>setItemF(f=>({...f,categoria:v}))} opts={ITEM_CATS}/>
@@ -978,7 +1051,7 @@ export default function App() {
             </div>
             <div style={{display:'flex',gap:10}}>
               <Btn color={N} disabled={!itemF.nome} onClick={saveItem}>✅ Salvar</Btn>
-              <Btn outline color="#888" onClick={()=>setShowAddItem(false)}>Cancelar</Btn>
+              <Btn outline color="#888" onClick={()=>{setShowAddItem(false);resetItemF();}}>Cancelar</Btn>
             </div>
           </Modal>
         )}
@@ -1061,7 +1134,7 @@ export default function App() {
             <option value="all">Todos</option>{PTYPES.map(t=><option key={t} value={t}>{t}</option>)}
           </select>
         </div>
-        <Btn color={G} onClick={()=>setShowPgto(true)} xst={{marginLeft:"auto"}}>+ Novo Registro</Btn>
+        <Btn color={G} onClick={()=>{setEditPgto(null);resetPgtoF();setShowPgto(true);}} xst={{marginLeft:"auto"}}>+ Novo Registro</Btn>
         <div style={{flexBasis:"100%",borderTop:"1px solid #F1F5F9",paddingTop:11}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
             <span style={{fontSize:11,fontWeight:800,color:N,textTransform:"uppercase",letterSpacing:1}}>Categorias totalizadas</span>
@@ -1116,6 +1189,7 @@ export default function App() {
                 <td style={{padding:"9px 11px"}}>{pg.txn?<span style={{background:N+"15",color:N,borderRadius:6,padding:"2px 7px",fontSize:11,fontWeight:700,fontFamily:"monospace"}}>{pg.txn}</span>:<span style={{color:"#94A3B8",fontSize:11}}>—</span>}</td>
                 <td style={{padding:"9px 11px"}}><select value={pg.status} onChange={e=>updPgto(pg.id,e.target.value)} style={{background:sc+"18",color:sc,border:`1px solid ${sc}44`,borderRadius:99,padding:"3px 9px",fontSize:12,fontWeight:700,cursor:"pointer",outline:"none"}}>{PSTAT.map(s=><option key={s}>{s}</option>)}</select></td>
                 <td style={{padding:"9px 11px"}}><div style={{display:"flex",gap:5,alignItems:"center"}}>
+                  <button onClick={()=>openEditPgto(pg)} style={{background:N,color:G,border:"none",borderRadius:7,padding:"5px 9px",cursor:"pointer",fontWeight:700,fontSize:11}}>✏️</button>
                   {pg.status==="Pendente"&&<button onClick={()=>setStripeTarget({pgto:pg,atleta:ath})} style={{background:"linear-gradient(135deg,#635BFF,#4F46E5)",color:"white",border:"none",borderRadius:7,padding:"5px 10px",cursor:"pointer",fontWeight:700,fontSize:11,whiteSpace:"nowrap"}}>💳 Pagar</button>}
                   {pg.comp&&<button onClick={()=>{const msg=`📋 *Comprovante*\n🔑 ${pg.txn}\nAtleta: ${ath?ath.nomeAtleta:"—"}\nValor: ${fmtR(pg.valor)}`;const el=document.createElement("a");el.href=pg.comp.data;el.download=pg.comp.name;el.click();setTimeout(()=>waOpen(WA_ADMIN,msg),600);}} style={{background:GR,color:"white",border:"none",borderRadius:7,padding:"5px 9px",cursor:"pointer",fontWeight:700,fontSize:11}}>📲</button>}
                   <button onClick={()=>delPgto(pg.id)} style={{background:"none",border:"none",color:R,cursor:"pointer",fontSize:14}}>🗑</button>
@@ -1126,16 +1200,30 @@ export default function App() {
           </table>
         </div>
       )}
-      {showPgto&&<Modal title="💰 Novo Registro" onClose={()=>setShowPgto(false)}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}><div style={{gridColumn:"1/-1"}}><label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",display:"block",marginBottom:4}}>Atleta *</label><select value={pgtoF.aId} onChange={e=>setPgtoF(f=>({...f,aId:Number(e.target.value)}))} style={{border:"1.5px solid #ddd",borderRadius:8,padding:"8px 11px",fontSize:14,width:"100%",outline:"none"}}><option value="">Selecione...</option>{athletes.slice().sort((a,b)=>(a.nomeAtleta||"").localeCompare(b.nomeAtleta||"")).map(a=><option key={a.id} value={a.id}>{a.nomeAtleta}{a.categoria?" ("+a.categoria+")":""}</option>)}</select></div><Sel label="Tipo *" value={pgtoF.tipo} onChange={v=>setPgtoF(f=>({...f,tipo:v}))} opts={PTYPES}/><Sel label="Status" value={pgtoF.status} onChange={v=>setPgtoF(f=>({...f,status:v}))} opts={PSTAT}/><Inp label="Descrição" value={pgtoF.desc} onChange={v=>setPgtoF(f=>({...f,desc:v}))} placeholder="ex: Campeonato"/><Inp label="Valor (R$)" type="number" value={pgtoF.valor} onChange={v=>setPgtoF(f=>({...f,valor:v}))}/><Inp label="Data" type="date" value={pgtoF.data} onChange={v=>setPgtoF(f=>({...f,data:v}))}/><div style={{gridColumn:"1/-1"}}><FilePick label="📎 Comprovante (opcional)" file={pgtoF.comp} onChange={f=>setPgtoF(fm=>({...fm,comp:f}))}/></div></div><div style={{display:"flex",gap:10}}><Btn color={N} disabled={!pgtoF.tipo||!pgtoF.aId} onClick={addPgto}>✅ Salvar</Btn><Btn outline color="#888" onClick={()=>setShowPgto(false)}>Cancelar</Btn></div></Modal>}
+      <div style={{background:"white",borderRadius:12,overflow:"hidden",boxShadow:"0 2px 8px #0001",marginTop:12}}>
+        <div style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <p style={{margin:0,fontWeight:800,fontSize:14,color:N}}>Histórico de Movimentação Financeira</p>
+          <Badge text={finHist.length+" registros"} color={N}/>
+        </div>
+        {finHist.length===0?<p style={{padding:22,textAlign:"center",color:"#888",fontSize:13,margin:0}}>Nenhuma movimentação registrada.</p>:(
+          <div style={{maxHeight:260,overflow:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",minWidth:760}}>
+              <thead><tr style={{background:"#F8FAFC"}}>{["Data","Ação","Atleta","Tipo","Valor","Status","Obs."].map(h=><th key={h} style={{padding:"8px 11px",textAlign:"left",fontSize:11,fontWeight:800,color:"#64748B",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+              <tbody>{finHist.map((h,i)=><tr key={h.id||i} style={{background:i%2===0?"white":"#F8FAFC",borderBottom:"1px solid #F1F5F9"}}><td style={{padding:"8px 11px",fontSize:12,color:"#64748B",whiteSpace:"nowrap"}}>{new Date(h.data).toLocaleString("pt-BR")}</td><td style={{padding:"8px 11px",fontSize:13,fontWeight:700,color:N}}>{h.action}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.atleta}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.tipo}</td><td style={{padding:"8px 11px",fontSize:13,fontWeight:700}}>{h.valor?fmtR(h.valor):"—"}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.status||"—"}</td><td style={{padding:"8px 11px",fontSize:12,color:"#64748B"}}>{h.extra||"—"}</td></tr>)}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      {showPgto&&<Modal title={editPgto?"✏️ Editar Registro Financeiro":"💰 Novo Registro"} onClose={()=>{setShowPgto(false);setEditPgto(null);resetPgtoF();}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}><div style={{gridColumn:"1/-1"}}><label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",display:"block",marginBottom:4}}>Atleta *</label><select value={pgtoF.aId} onChange={e=>setPgtoF(f=>({...f,aId:Number(e.target.value)}))} style={{border:"1.5px solid #ddd",borderRadius:8,padding:"8px 11px",fontSize:14,width:"100%",outline:"none"}}><option value="">Selecione...</option>{athletes.slice().sort(sortName).map(a=><option key={a.id} value={a.id}>{a.nomeAtleta}{a.categoria?" ("+a.categoria+")":""}</option>)}</select></div><Sel label="Tipo *" value={pgtoF.tipo} onChange={v=>setPgtoF(f=>({...f,tipo:v}))} opts={PTYPES}/><Sel label="Status" value={pgtoF.status} onChange={v=>setPgtoF(f=>({...f,status:v}))} opts={PSTAT}/><Inp label="Descrição" value={pgtoF.desc} onChange={v=>setPgtoF(f=>({...f,desc:v}))} placeholder="ex: Campeonato"/><Inp label="Valor (R$)" type="number" value={pgtoF.valor} onChange={v=>setPgtoF(f=>({...f,valor:v}))}/><Inp label="Data" type="date" value={pgtoF.data} onChange={v=>setPgtoF(f=>({...f,data:v}))}/><div style={{gridColumn:"1/-1"}}><FilePick label="📎 Comprovante (opcional)" file={pgtoF.comp} onChange={f=>setPgtoF(fm=>({...fm,comp:f}))}/></div></div><div style={{display:"flex",gap:10}}><Btn color={N} disabled={!pgtoF.tipo||!pgtoF.aId} onClick={editPgto?saveEditPgto:addPgto}>✅ Salvar</Btn><Btn outline color="#888" onClick={()=>{setShowPgto(false);setEditPgto(null);resetPgtoF();}}>Cancelar</Btn></div></Modal>}
     </div>
   );
 
   // ── Professores ───────────────────────────────────────
   const renderProfs=()=>(
     <div style={{maxWidth:800,margin:"24px auto",padding:"0 16px"}}>
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn color={G} onClick={()=>setShowProf(true)}>+ Novo Professor</Btn></div>
-      <div style={{background:"white",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 8px #0001"}}>{profs.length===0?<p style={{padding:32,textAlign:"center",color:"#888"}}>Nenhum professor</p>:profs.map((pf,i)=><div key={pf.id} style={{display:"flex",gap:12,padding:"11px 16px",borderBottom:"1px solid #F1F5F9",alignItems:"center",background:i%2===0?"white":"#F8FAFC"}}><div style={{width:36,height:36,borderRadius:8,background:N,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:G,fontWeight:800}}>{pf.nome?pf.nome[0]:"?"}</span></div><div style={{flex:1}}><p style={{margin:0,fontWeight:700,color:N}}>{pf.nome}</p><p style={{margin:0,fontSize:12,color:"#64748B"}}>Login: <strong>{pf.user}</strong> · {pf.projeto||"—"} · {pf.categoria||"—"}</p></div><button onClick={async()=>{const nl=profs.filter(x=>x.id!==pf.id);setProfs(nl);await sPf(nl);}} style={{background:"none",border:"none",color:R,cursor:"pointer",fontSize:16}}>🗑</button></div>)}</div>
-      {showProf&&<Modal title="➕ Novo Professor" onClose={()=>setShowProf(false)}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}><Inp label="Nome" req value={profF.nome} onChange={v=>setProfF(f=>({...f,nome:v}))} full/><Inp label="Login" req value={profF.user} onChange={v=>setProfF(f=>({...f,user:v}))}/><Inp label="Senha" req value={profF.pass} onChange={v=>setProfF(f=>({...f,pass:v}))} type="password"/><Sel label="Projeto" value={profF.projeto} onChange={v=>setProfF(f=>({...f,projeto:v}))} opts={PROJS}/><Sel label="Categoria" value={profF.categoria} onChange={v=>setProfF(f=>({...f,categoria:v}))} opts={CATS}/></div><div style={{display:"flex",gap:10}}><Btn color={N} disabled={!profF.nome||!profF.user||!profF.pass} onClick={addProf}>✅ Salvar</Btn><Btn outline color="#888" onClick={()=>setShowProf(false)}>Cancelar</Btn></div></Modal>}
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn color={G} onClick={()=>{resetProfF();setShowProf(true);}}>+ Novo Professor</Btn></div>
+      <div style={{background:"white",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 8px #0001"}}>{profs.length===0?<p style={{padding:32,textAlign:"center",color:"#888"}}>Nenhum professor</p>:profs.map((pf,i)=><div key={pf.id} style={{display:"flex",gap:12,padding:"11px 16px",borderBottom:"1px solid #F1F5F9",alignItems:"center",background:i%2===0?"white":"#F8FAFC"}}><div style={{width:36,height:36,borderRadius:8,background:N,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:G,fontWeight:800}}>{pf.nome?pf.nome[0]:"?"}</span></div><div style={{flex:1}}><p style={{margin:0,fontWeight:700,color:N}}>{pf.nome}</p><p style={{margin:0,fontSize:12,color:"#64748B"}}>Login: <strong>{pf.user}</strong> · {pf.projeto||"—"} · {pf.categoria||"—"}</p></div><button onClick={()=>openEditProf(pf)} style={{background:"none",border:"none",color:N,cursor:"pointer",fontSize:16}}>✏️</button><button onClick={async()=>{const nl=profs.filter(x=>x.id!==pf.id);setProfs(nl);await sPf(nl);}} style={{background:"none",border:"none",color:R,cursor:"pointer",fontSize:16}}>🗑</button></div>)}</div>
+      {showProf&&<Modal title={profF.id?"✏️ Editar Professor":"➕ Novo Professor"} onClose={()=>{setShowProf(false);resetProfF();}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}><Inp label="Nome" req value={profF.nome} onChange={v=>setProfF(f=>({...f,nome:v}))} full/><Inp label="Login" req value={profF.user} onChange={v=>setProfF(f=>({...f,user:v}))}/><Inp label="Senha" req value={profF.pass} onChange={v=>setProfF(f=>({...f,pass:v}))} type="password"/><Sel label="Projeto" value={profF.projeto} onChange={v=>setProfF(f=>({...f,projeto:v}))} opts={PROJS}/><Sel label="Categoria" value={profF.categoria} onChange={v=>setProfF(f=>({...f,categoria:v}))} opts={CATS}/></div><div style={{display:"flex",gap:10}}><Btn color={N} disabled={!profF.nome||!profF.user||!profF.pass} onClick={addProf}>✅ Salvar</Btn><Btn outline color="#888" onClick={()=>{setShowProf(false);resetProfF();}}>Cancelar</Btn></div></Modal>}
     </div>
   );
 
@@ -1162,7 +1250,7 @@ export default function App() {
             <div><p style={{color:"white",fontWeight:800,fontSize:18,margin:0}}>{a.nomeAtleta}</p><p style={{color:G,fontSize:13,margin:"2px 0 0"}}>{a.posicao||""}</p><div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap"}}>{a.categoria&&<Badge text={a.categoria} color={G}/>}{a.projeto&&<Badge text={a.projeto} color={G}/>}</div></div>
           </div>
           <div style={{padding:18}}>
-            <IRow label="Nasc." value={fmtD(a.dataNasc)}/><IRow label="Escola" value={a.escola}/><IRow label="Responsável" value={a.nomeResp}/><IRow label="WhatsApp" value={a.telResp}/>
+        <IRow label="Nasc." value={fmtD(a.dataNasc)}/><IRow label="RG" value={a.rgAtletaNum}/><IRow label="Escola" value={a.escola}/><IRow label="Responsável" value={a.nomeResp}/><IRow label="WhatsApp" value={a.telResp}/>
           </div>
         </div>
         {missing.length>0&&(
@@ -1206,7 +1294,7 @@ export default function App() {
           {a.neurodivergente&&<Badge text="Neurodivergente" color={PU}/>}
         </div>
         {a.foto&&<img src={a.foto} alt="" style={{width:78,height:78,objectFit:"cover",borderRadius:12,border:`3px solid ${G}`,float:"right",marginLeft:12}}/>}
-        <IRow label="Nasc." value={fmtD(a.dataNasc)}/><IRow label="Idade" value={a.age+" anos"}/><IRow label="CPF Atleta" value={a.cpfAtleta}/><IRow label="Posição" value={a.posicao}/><IRow label="Escola" value={a.escola}/><IRow label="Responsável" value={a.nomeResp}/><IRow label="WhatsApp" value={a.telResp}/>
+        <IRow label="Nasc." value={fmtD(a.dataNasc)}/><IRow label="Idade" value={a.age+" anos"}/><IRow label="CPF Atleta" value={a.cpfAtleta}/><IRow label="RG Atleta" value={a.rgAtletaNum}/><IRow label="Posição" value={a.posicao}/><IRow label="Escola" value={a.escola}/><IRow label="Responsável" value={a.nomeResp}/><IRow label="WhatsApp" value={a.telResp}/>
         <div style={{clear:"both",marginTop:12,display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
           {[{k:"rgAtleta",l:"RG Atleta"},{k:"rgResp",l:"RG Resp."},{k:"comprResid",l:"Comp. Resid."},{k:"laudo",l:"Laudo"}].map(({k,l})=><div key={k} style={{background:a[k]?"#F0FFF4":"#FFF9F9",borderRadius:8,padding:8,border:`1px solid ${a[k]?"#86EFAC":R+"44"}`,textAlign:"center"}}><p style={{margin:"0 0 2px",fontSize:16}}>{a[k]?"✅":"❌"}</p><p style={{margin:0,fontSize:10,fontWeight:700,color:a[k]?"#065F46":R}}>{l}</p>{a[k]&&<a href={a[k].data} download={a[k].name} style={{fontSize:10,color:BL,fontWeight:700}}>⬇</a>}</div>)}
         </div>
@@ -1282,7 +1370,55 @@ export default function App() {
       {sigTarget&&<SignaturePad onSave={sig=>{setPdfTarget({atleta:sigTarget,sig});setSigTarget(null);}} onClose={()=>setSigTarget(null)}/>}
       {pdfTarget&&<PDFModal atleta={pdfTarget.atleta} sig={pdfTarget.sig} onClose={()=>setPdfTarget(null)}/>}
       {migAth&&<Modal title="🔄 Migrar" onClose={()=>setMigAth(null)}><p style={{fontSize:14,marginBottom:14}}>Alterando: <strong>{migAth.nomeAtleta}</strong></p><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}><Sel label="Nova Categoria" value={migC} onChange={setMigC} opts={CATS}/><Sel label="Novo Projeto" value={migP} onChange={setMigP} opts={PROJS}/></div><div style={{display:"flex",gap:10}}><Btn color={N} onClick={doMig}>✅ Confirmar</Btn><Btn outline color="#888" onClick={()=>setMigAth(null)}>Cancelar</Btn></div></Modal>}
-      {editAth&&<Modal title="✏️ Editar" onClose={()=>setEditAth(null)} wide><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}><Inp label="Nome" value={editAth.nomeAtleta} onChange={v=>setEditAth(e=>({...e,nomeAtleta:v}))} full/><Inp label="Data Nasc." type="date" value={editAth.dataNasc} onChange={v=>setEditAth(e=>({...e,dataNasc:v}))}/><Sel label="Categoria" value={editAth.categoria} onChange={v=>setEditAth(e=>({...e,categoria:v}))} opts={CATS}/><Sel label="Projeto" value={editAth.projeto} onChange={v=>setEditAth(e=>({...e,projeto:v}))} opts={PROJS}/><Sel label="Posição" value={editAth.posicao} onChange={v=>setEditAth(e=>({...e,posicao:v}))} opts={POSICOES}/><Inp label="Tel. Atleta" value={editAth.telAtleta} onChange={v=>setEditAth(e=>({...e,telAtleta:v}))}/><Inp label="CPF Atleta" value={editAth.cpfAtleta} onChange={v=>setEditAth(e=>({...e,cpfAtleta:v}))}/><Inp label="Escola" value={editAth.escola} onChange={v=>setEditAth(e=>({...e,escola:v}))}/><Inp label="Nome Responsável" value={editAth.nomeResp} onChange={v=>setEditAth(e=>({...e,nomeResp:v}))} full/><Inp label="CPF Responsável" value={editAth.cpfResp} onChange={v=>setEditAth(e=>({...e,cpfResp:v}))}/><Inp label="WhatsApp Resp." value={editAth.telResp} onChange={v=>setEditAth(e=>({...e,telResp:v}))}/><Sel label="Relação" value={editAth.relacao} onChange={v=>setEditAth(e=>({...e,relacao:v}))} opts={RELS}/></div><div style={{display:"flex",gap:10}}><Btn color={N} onClick={saveEdit}>💾 Salvar</Btn><Btn outline color="#888" onClick={()=>setEditAth(null)}>Cancelar</Btn></div></Modal>}
+      {editAth&&<Modal title="✏️ Editar Atleta" onClose={()=>setEditAth(null)} wide>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}>
+          <Sec label="Dados do Atleta"/>
+          <Inp label="Nome" value={editAth.nomeAtleta} onChange={v=>setEditAth(e=>({...e,nomeAtleta:v}))} full/>
+          <Inp label="Data Nasc." type="date" value={editAth.dataNasc} onChange={v=>setEditAth(e=>({...e,dataNasc:v}))}/>
+          <Inp label="CPF Atleta" value={editAth.cpfAtleta} onChange={v=>setEditAth(e=>({...e,cpfAtleta:fmtCPF(v)}))}/>
+          <Inp label="RG Atleta" value={editAth.rgAtletaNum} onChange={v=>setEditAth(e=>({...e,rgAtletaNum:v}))}/>
+          <Inp label="Tel. Atleta" value={editAth.telAtleta} onChange={v=>setEditAth(e=>({...e,telAtleta:fmtTel(v)}))}/>
+          <Inp label="E-mail Atleta" value={editAth.emailAtleta} onChange={v=>setEditAth(e=>({...e,emailAtleta:v}))}/>
+          <Sel label="Categoria" value={editAth.categoria} onChange={v=>setEditAth(e=>({...e,categoria:v}))} opts={CATS}/>
+          <Sel label="Projeto" value={editAth.projeto} onChange={v=>setEditAth(e=>({...e,projeto:v}))} opts={PROJS}/>
+          <Sel label="Posição" value={editAth.posicao} onChange={v=>setEditAth(e=>({...e,posicao:v}))} opts={POSICOES}/>
+          <Inp label="Escola" value={editAth.escola} onChange={v=>setEditAth(e=>({...e,escola:v}))}/>
+          <Inp label="Série" value={editAth.serie} onChange={v=>setEditAth(e=>({...e,serie:v}))}/>
+          <Inp label="Endereço" value={editAth.endereco} onChange={v=>setEditAth(e=>({...e,endereco:v}))} full/>
+          <Inp label="Bairro" value={editAth.bairro} onChange={v=>setEditAth(e=>({...e,bairro:v}))}/>
+          <Inp label="Cidade" value={editAth.cidade} onChange={v=>setEditAth(e=>({...e,cidade:v}))}/>
+          <div style={{gridColumn:"1/-1"}}>
+            <label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",display:"block",marginBottom:5}}>Foto</label>
+            <input type="file" accept="image/*" style={{fontSize:12}} onChange={async e=>{if(e.target.files[0]){const d=await readB64(e.target.files[0]);setEditAth(at=>({...at,foto:d.data}));}}}/>
+            {editAth.foto&&<div style={{display:"flex",gap:10,alignItems:"center",marginTop:8}}><img src={editAth.foto} alt="" style={{width:74,height:74,objectFit:"cover",borderRadius:10,border:`3px solid ${G}`}}/><Btn small outline color={R} onClick={()=>setEditAth(e=>({...e,foto:null}))}>Remover foto</Btn></div>}
+          </div>
+          <Sec label="Responsável"/>
+          <Inp label="Nome Responsável" value={editAth.nomeResp} onChange={v=>setEditAth(e=>({...e,nomeResp:v}))} full/>
+          <Inp label="CPF Responsável" value={editAth.cpfResp} onChange={v=>setEditAth(e=>({...e,cpfResp:fmtCPF(v)}))}/>
+          <Inp label="WhatsApp Resp." value={editAth.telResp} onChange={v=>setEditAth(e=>({...e,telResp:fmtTel(v)}))}/>
+          <Inp label="E-mail Resp." value={editAth.emailResp} onChange={v=>setEditAth(e=>({...e,emailResp:v}))}/>
+          <Sel label="Relação" value={editAth.relacao} onChange={v=>setEditAth(e=>({...e,relacao:v}))} opts={RELS}/>
+          <Inp label="Documento Resp." value={editAth.docResp} onChange={v=>setEditAth(e=>({...e,docResp:v}))}/>
+          <Inp label="Contato Emergência" value={editAth.contatoEmerg} onChange={v=>setEditAth(e=>({...e,contatoEmerg:v}))}/>
+          <Inp label="Telefone Emergência" value={editAth.telEmerg} onChange={v=>setEditAth(e=>({...e,telEmerg:fmtTel(v)}))}/>
+          <Sec label="Saúde e Autorizações"/>
+          <Sel label="Alergia" value={editAth.alergia} onChange={v=>setEditAth(e=>({...e,alergia:v}))} opts={["sim","nao"]}/>
+          <Inp label="Descrição Alergia" value={editAth.alergiaDesc} onChange={v=>setEditAth(e=>({...e,alergiaDesc:v}))}/>
+          <Sel label="Medicamento" value={editAth.medicamento} onChange={v=>setEditAth(e=>({...e,medicamento:v}))} opts={["sim","nao"]}/>
+          <Inp label="Descrição Medicamento" value={editAth.medicamentoDesc} onChange={v=>setEditAth(e=>({...e,medicamentoDesc:v}))}/>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontWeight:700,fontSize:13,color:PU}}><input type="checkbox" checked={!!editAth.neurodivergente} onChange={e=>setEditAth(at=>({...at,neurodivergente:e.target.checked}))} style={{accentColor:PU}}/>Atleta neurodivergente</label>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontWeight:700,fontSize:13,color:N}}><input type="checkbox" checked={!!editAth.termoAceito} onChange={e=>setEditAth(at=>({...at,termoAceito:e.target.checked}))} style={{accentColor:N}}/>Termo aceito</label>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontWeight:700,fontSize:13,color:BL}}><input type="checkbox" checked={!!editAth.imagemAceito} onChange={e=>setEditAth(at=>({...at,imagemAceito:e.target.checked}))} style={{accentColor:BL}}/>Imagem autorizada</label>
+          <Sec label="Documentos"/>
+          <div style={{gridColumn:"1/-1",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <FilePick label="🪪 RG / Certidão do Atleta" file={editAth.rgAtleta} onChange={f=>setEditAth(at=>({...at,rgAtleta:f}))}/>
+            <FilePick label="🪪 RG / CPF do Responsável" file={editAth.rgResp} onChange={f=>setEditAth(at=>({...at,rgResp:f}))}/>
+            <FilePick label="🏠 Comprovante de Residência" file={editAth.comprResid} onChange={f=>setEditAth(at=>({...at,comprResid:f}))}/>
+            <FilePick label="📋 Laudo Médico" file={editAth.laudo} onChange={f=>setEditAth(at=>({...at,laudo:f}))}/>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:10}}><Btn color={N} onClick={saveEdit}>💾 Salvar</Btn><Btn outline color="#888" onClick={()=>setEditAth(null)}>Cancelar</Btn></div>
+      </Modal>}
       {renderSelAth()}
 
       {tab==="form"&&(
@@ -1339,6 +1475,7 @@ h1{font-size:20px;color:#1B2A4A;margin:0}.sub{font-size:11px;color:#94A3B8;margi
 <div><p class="fl">Posição</p><p class="fv">${a.posicao||"—"}</p></div>
 <div><p class="fl">Data de Nascimento</p><p class="fv">${fmtD(a.dataNasc)} (${a.age} anos)</p></div>
 <div><p class="fl">CPF</p><p class="fv">${a.cpfAtleta||"—"}</p></div>
+<div><p class="fl">RG</p><p class="fv">${a.rgAtletaNum||"—"}</p></div>
 <div><p class="fl">Telefone</p><p class="fv">${a.telAtleta||"—"}</p></div>
 <div><p class="fl">Escola / Série</p><p class="fv">${a.escola||"—"}${a.serie?" — "+a.serie:""}</p></div>
 <div><p class="fl">Categoria / Projeto</p><p class="fv">${a.categoria||"—"} · ${a.projeto||"—"}</p></div>
