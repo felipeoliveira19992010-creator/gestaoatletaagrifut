@@ -130,6 +130,27 @@ const buildDocsMsg = a => {
   return `Olá, ${a.nomeResp}! 👋\n\nEquipe *Itajaí Agrifut* 🟡⚫\n\nO cadastro do atleta *${a.nomeAtleta}* possui documentos pendentes:\n\n${miss.map((d,i)=>`${i+1}. ${d}`).join("\n")}\n\n📱 *Como enviar os documentos:*\nAcesse seu link exclusivo abaixo e clique em 📁 Documentos → + Adicionar\n\n🔗 ${buildLink(a.token||"")}\n\n${link?`👥 *Entre no grupo:*\n${link}\n\n`:""}Qualquer dúvida estamos à disposição! ⚽`;
 };
 
+const isImgDoc = f => !!(f&&f.data&&(((f.type||"").startsWith("image/"))||String(f.data).startsWith("data:image/")));
+const docName = f => f&&f.name?f.name:"Documento anexado";
+const docTileHTML = (label,file,extra="") => {
+  if(!file) return "";
+  if(isImgDoc(file)){
+    return `<div class="doc-file ${extra}"><div class="doc-caption"><strong>${label}</strong><span>${docName(file)}</span></div><div class="doc-img-wrap"><img src="${file.data}" alt="${label}"/></div></div>`;
+  }
+  return `<div class="doc-file doc-pdf ${extra}"><div class="doc-caption"><strong>${label}</strong><span>${docName(file)}</span></div><div class="doc-pdf-box">Arquivo PDF anexado. Abra o documento original pelo perfil do atleta.</div></div>`;
+};
+const docAttachmentsHTML = a => {
+  const mainDocs=[
+    {label:"RG / Certidão do Atleta",file:a.rgAtleta},
+    {label:"RG / CPF do Responsável",file:a.rgResp},
+    {label:"Comprovante de Residência",file:a.comprResid}
+  ].filter(d=>d.file);
+  const main=mainDocs.length?`<section class="doc-page"><h2>Documentos Anexados</h2><p class="doc-note">Imagens em escala original, reduzidas automaticamente somente para caber na folha.</p><div class="doc-img-grid doc-count-${mainDocs.length}">${mainDocs.map(d=>docTileHTML(d.label,d.file)).join("")}</div></section>`:"";
+  const laudo=a.laudo?`<section class="doc-page laudo-page"><h2>Laudo Médico</h2><p class="doc-note">Laudo anexado em folha separada.</p><div class="doc-img-grid doc-count-1">${docTileHTML("Laudo Médico",a.laudo,"laudo-doc")}</div></section>`:"";
+  return main+laudo;
+};
+const docAttachmentStyles = `@page{size:A4;margin:10mm}.doc-page{page-break-before:always;break-before:page;display:flex;flex-direction:column;gap:8px;background:white}.doc-page h2{font-size:16px;color:#1B2A4A;margin:0;border-bottom:3px solid #F5C518;padding-bottom:6px}.doc-note{font-size:10px;color:#64748B;margin:0 0 4px}.doc-img-grid{flex:1;display:grid;gap:8px;min-height:0}.doc-count-1{grid-template-rows:1fr}.doc-count-2{grid-template-rows:1fr 1fr}.doc-count-3{grid-template-rows:repeat(3,1fr)}.doc-file{border:1px solid #CBD5E1;border-radius:8px;padding:7px;display:flex;flex-direction:column;min-height:0;overflow:hidden;break-inside:avoid;page-break-inside:avoid}.doc-caption{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:5px}.doc-caption strong{font-size:11px;color:#1B2A4A;text-transform:uppercase}.doc-caption span{font-size:9px;color:#64748B;text-align:right;word-break:break-all}.doc-img-wrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#F8FAFC;border-radius:6px}.doc-img-wrap img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block}.doc-pdf-box{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;background:#F8FAFC;border-radius:6px;color:#64748B;font-size:12px;padding:12px}.laudo-page .doc-img-grid{grid-template-rows:1fr}@media screen{.doc-page{min-height:980px;margin-top:28px;border-top:1px solid #E2E8F0;padding-top:16px}.doc-img-grid{height:850px}.laudo-doc .doc-img-wrap{height:auto;min-height:850px}}@media print{.doc-page{height:260mm;padding-top:0}.doc-img-grid{height:236mm}.doc-file{padding:5mm}.doc-caption{margin-bottom:3mm}.laudo-page{height:auto;min-height:260mm}.laudo-doc{display:block;overflow:visible;break-inside:auto;page-break-inside:auto}.laudo-doc .doc-img-wrap{height:auto;overflow:visible;display:block;text-align:center;background:white}.laudo-doc .doc-img-wrap img{max-height:none}}`;
+
 const generatePDF = (a, sig) => {
   const docs=[{l:"RG Atleta",ok:!!a.rgAtleta},{l:"RG Responsável",ok:!!a.rgResp},{l:"Comp. Residência",ok:!!a.comprResid},{l:"Laudo Médico",ok:!!a.laudo}];
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ficha — ${a.nomeAtleta}</title>
@@ -144,6 +165,7 @@ h1{font-size:20px;color:#1B2A4A}
 .dno{background:#FFF5F5;color:#DC2626;border:1px solid #FECACA;border-radius:8px;padding:8px;text-align:center;font-size:11px;font-weight:700}
 .sig-a{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:28px}.sig-b{border-top:2px solid #1B2A4A;padding-top:6px;text-align:center;font-size:11px;color:#64748B;text-transform:uppercase}
 .foot{margin-top:24px;text-align:center;font-size:10px;color:#94A3B8;border-top:1px solid #E2E8F0;padding-top:10px}
+${docAttachmentStyles}
 @media print{body{padding:14px}}</style></head><body>
 <div class="hdr"><div class="logo"><img src="${getLogoSrc()}" alt="Agrifut Itajaí EC"/></div><div><h1>Itajaí Agrifut</h1><p style="font-size:11px;color:#94A3B8">CNPJ ${CNPJ} · Ficha de Matrícula</p></div></div>
 <div class="sec"><div class="sec-t">Dados do Atleta</div><div class="grid">
@@ -181,6 +203,7 @@ ${docs.map(d=>`<div class="${d.ok?"dok":"dno"}">${d.ok?"✅":"❌"}<br/>${d.l}</
 <div class="sig-b"><div style="height:70px"></div><div>Data: _____ / _____ / __________</div></div>
 </div>
 <div class="foot">Itajaí Esporte Clube — Agrifut · CNPJ ${CNPJ} · Gerado em ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR")}</div>
+${docAttachmentsHTML(a)}
 <script>setTimeout(()=>window.print(),600)</script></body></html>`;
   const w=window.open("","_blank"); if(w){w.document.write(html);w.document.close();}
 };
@@ -582,14 +605,55 @@ export default function App() {
 
   const addCamp=async()=>{if(!campF.nome)return;const nl=[...camps,{...campF,id:Date.now(),inscritos:[],eventos:[]}];setCamps(nl);await sC(nl);setShowCamp(false);setCampF({nome:"",data:"",cat:"",proj:""});t2("✅ Campeonato criado!");};
   const delCamp=async id=>{const nl=camps.filter(c=>c.id!==id);setCamps(nl);await sC(nl);setSelCamp(null);};
+  const campPayDesc=(camp,ev)=>`${camp.nome} - ${ev.nome}`;
+  const campFinanceIds=(camp,ev,list=pagamentos)=>list.filter(pg=>pg.tipo==="Campeonato"&&((pg.campId===camp.id&&pg.evId===ev.id)||pg.desc===campPayDesc(camp,ev))).map(pg=>Number(pg.aId));
+  const findCampPgto=(camp,ev,aId,list=pagamentos)=>list.find(pg=>Number(pg.aId)===Number(aId)&&pg.tipo==="Campeonato"&&((pg.campId===camp.id&&pg.evId===ev.id)||pg.desc===campPayDesc(camp,ev)));
+  const campPayOk=(camp,ev,aId)=>{const pg=findCampPgto(camp,ev,aId);return !!pg&&(pg.status==="Pago"||pg.status==="Isento");};
+  const campPayLabel=(camp,ev,aId)=>{const pg=findCampPgto(camp,ev,aId);return pg?`${pg.status}${pg.valor?" · "+fmtR(pg.valor):""}`:"Pendente não lançado";};
+  const campFinanceSummary=(camp,ev)=>{const ids=[...new Set([...(camp.inscritos||[]),...campFinanceIds(camp,ev)])];const rows=ids.map(id=>findCampPgto(camp,ev,id));return{pend:rows.filter(pg=>pg&&pg.status==="Pendente").length,pago:rows.filter(pg=>pg&&pg.status==="Pago").length,isento:rows.filter(pg=>pg&&pg.status==="Isento").length,sem:rows.filter(pg=>!pg).length,total:ids.length};};
+  const syncCampFinance=async(camp,evOrEvents,ids=null,silent=false)=>{
+    const events=(Array.isArray(evOrEvents)?evOrEvents:[evOrEvents]).filter(ev=>ev&&Number(ev.taxa||0)>0);
+    const targetIds=[...new Set((ids||camp.inscritos||[]).map(Number).filter(Boolean))];
+    if(!events.length){if(!silent)t2("⚠️ Informe a taxa da partida para gerar pendências.");return false;}
+    if(!targetIds.length){if(!silent)t2("⚠️ Nenhum atleta inscrito para gerar pendência.");return false;}
+    let nl=pagamentos.map(p=>({...p}));
+    const created=[];
+    events.forEach(ev=>{
+      targetIds.forEach((aId,idx)=>{
+        const exists=findCampPgto(camp,ev,aId,nl);
+        if(exists){
+          if(exists.status==="Pendente"){exists.valor=ev.taxa;exists.data=ev.data||camp.data||tod();exists.desc=campPayDesc(camp,ev);exists.campId=camp.id;exists.evId=ev.id;}
+          return;
+        }
+        const pg={id:Date.now()+Math.random()+idx,tipo:"Campeonato",desc:campPayDesc(camp,ev),valor:ev.taxa,status:"Pendente",data:ev.data||camp.data||tod(),aId,comp:null,campId:camp.id,evId:ev.id};
+        nl.push(pg);created.push(pg);
+      });
+    });
+    setPagamentos(nl);await sP(nl);
+    if(created.length){
+      const hist=created.map(pg=>{const ath=athletes.find(a=>Number(a.id)===Number(pg.aId));return{id:Date.now()+Math.random(),data:new Date().toISOString(),action:"Pendência de competição criada",aId:pg.aId,atleta:ath?ath.nomeAtleta:"—",tipo:pg.tipo,valor:pg.valor,status:pg.status,extra:pg.desc};});
+      const fh=[...hist,...finHist].slice(0,300);setFinHist(fh);await sFH(fh);
+    }
+    if(!silent)t2(created.length?`✅ ${created.length} pendência(s) gerada(s) no financeiro!`:"✅ Pendências já estavam lançadas.");
+    return true;
+  };
+  const setCampPgtoStatus=async(camp,ev,aId,status)=>{
+    if(!Number(ev.taxa||0)){t2("⚠️ Informe a taxa da partida primeiro.");return;}
+    let nl=pagamentos.map(p=>({...p}));
+    let pg=findCampPgto(camp,ev,aId,nl);
+    if(!pg){pg={id:Date.now()+Math.random(),tipo:"Campeonato",desc:campPayDesc(camp,ev),valor:ev.taxa,status:"Pendente",data:ev.data||camp.data||tod(),aId:Number(aId),comp:null,campId:camp.id,evId:ev.id};nl.push(pg);}
+    const updated={...pg,status,valor:ev.taxa,desc:campPayDesc(camp,ev),campId:camp.id,evId:ev.id};
+    nl=nl.map(p=>p.id===pg.id?updated:p);
+    setPagamentos(nl);await sP(nl);await addFinHist("Status taxa competição",updated,campPayDesc(camp,ev));t2("✅ Financeiro da competição atualizado!");
+  };
   const hasInscricaoOk=aId=>pagamentos.some(pg=>pg.aId===aId&&pg.tipo==="Taxa de Inscrição"&&(pg.status==="Pago"||pg.status==="Isento"));
   const hasTaxaGeralOk=aId=>pagamentos.some(pg=>pg.aId===aId&&pg.tipo!=="Uniforme"&&(pg.status==="Pago"||pg.status==="Isento"));
   const taxaLabel=aId=>{const pg=pagamentos.find(x=>x.aId===aId&&x.tipo!=="Uniforme"&&(x.status==="Pago"||x.status==="Isento"));return pg?`${pg.tipo}: ${pg.status}`:"Sem taxa";};
-  const togInsc=async(camp,aId)=>{if(!hasInscricaoOk(aId)){t2("⚠️ Atleta sem taxa de inscrição paga ou isenta!");return;}const ins=camp.inscritos.includes(aId)?camp.inscritos.filter(x=>x!==aId):[...camp.inscritos,aId];const nl=camps.map(c=>c.id===camp.id?{...c,inscritos:ins}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===camp.id));};
-  const addEv=async()=>{if(!evF.nome||!selCamp)return;const ev={...evF,id:Date.now(),convocados:[]};const nl=camps.map(c=>c.id===selCamp.id?{...c,eventos:[...(c.eventos||[]),ev]}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===selCamp.id));setShowEv(false);setEvF({nome:"",data:"",local:"",taxa:""});t2("✅ Evento criado!");};
-  const togConv=async(camp,evId,aId)=>{if(!camp.inscritos.includes(aId)&&!hasTaxaGeralOk(aId)){t2("⚠️ Atleta sem inscrição ou taxa paga/isenta!");return;}const nl=camps.map(c=>c.id===camp.id?{...c,eventos:c.eventos.map(ev=>ev.id===evId?{...ev,convocados:ev.convocados.includes(aId)?ev.convocados.filter(x=>x!==aId):[...ev.convocados,aId]}:ev)}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===camp.id));};
+  const togInsc=async(camp,aId)=>{if(!hasInscricaoOk(aId)){t2("⚠️ Atleta sem taxa de inscrição paga ou isenta!");return;}const adding=!camp.inscritos.includes(aId);const ins=adding?[...camp.inscritos,aId]:camp.inscritos.filter(x=>x!==aId);const nl=camps.map(c=>c.id===camp.id?{...c,inscritos:ins}:c);setCamps(nl);await sC(nl);const nc=nl.find(c=>c.id===camp.id);setSelCamp(nc);if(adding)await syncCampFinance(nc,nc.eventos||[],[aId],true);};
+  const addEv=async()=>{if(!evF.nome||!selCamp)return;const ev={...evF,id:Date.now(),convocados:[]};const nl=camps.map(c=>c.id===selCamp.id?{...c,eventos:[...(c.eventos||[]),ev]}:c);setCamps(nl);await sC(nl);const nc=nl.find(c=>c.id===selCamp.id);setSelCamp(nc);if(Number(ev.taxa||0)>0)await syncCampFinance(nc,ev,nc.inscritos||[],true);setShowEv(false);setEvF({nome:"",data:"",local:"",taxa:""});t2("✅ Evento criado!");};
+  const togConv=async(camp,evId,aId)=>{const ev=(camp.eventos||[]).find(e=>e.id===evId);if(!camp.inscritos.includes(aId)&&!campPayOk(camp,ev,aId)&&!hasTaxaGeralOk(aId)){t2("⚠️ Atleta sem inscrição ou taxa paga/isenta!");return;}const nl=camps.map(c=>c.id===camp.id?{...c,eventos:c.eventos.map(ev=>ev.id===evId?{...ev,convocados:ev.convocados.includes(aId)?ev.convocados.filter(x=>x!==aId):[...ev.convocados,aId]}:ev)}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===camp.id));};
   const delEv=async(cId,eId)=>{const nl=camps.map(c=>c.id===cId?{...c,eventos:c.eventos.filter(e=>e.id!==eId)}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===cId));};
-  const expConv=(camp,ev)=>{const list=ev.convocados.map((id,i)=>{const a=athletes.find(x=>x.id===id);return`${i+1}. ${a?a.nomeAtleta:"?"} (${a?a.categoria:"—"}${a&&a.posicao?" · "+a.posicao:""})`;});const msg=`🏆 *${camp.nome}*\n⚽ *${ev.nome}*\n📅 ${fmtD(ev.data)}${ev.local?"\n📍 "+ev.local:""}${ev.taxa?"\n💰 "+fmtR(ev.taxa):""}\n\n👕 *CONVOCADOS (${ev.convocados.length}):*\n${list.join("\n")}\n\n_Itajaí Agrifut 🟡⚫_`;waOpen(WA_ADMIN,msg);};
+  const expConv=(camp,ev)=>{const list=ev.convocados.map((id,i)=>{const a=athletes.find(x=>x.id===id);const taxa=ev.taxa?` · Taxa: ${campPayLabel(camp,ev,id)}`:"";return`${i+1}. ${a?a.nomeAtleta:"?"} (${a?a.categoria:"—"}${a&&a.posicao?" · "+a.posicao:""}${taxa})`;});const msg=`🏆 *${camp.nome}*\n⚽ *${ev.nome}*\n📅 ${fmtD(ev.data)}${ev.local?"\n📍 "+ev.local:""}${ev.taxa?"\n💰 "+fmtR(ev.taxa):""}\n\n👕 *CONVOCADOS (${ev.convocados.length}):*\n${list.join("\n")}\n\n_Itajaí Agrifut 🟡⚫_`;waOpen(WA_ADMIN,msg);};
   const resetProfF=()=>setProfF({nome:"",user:"",pass:"",projeto:"",categoria:""});
   const openEditProf=pf=>{setProfF({...pf});setShowProf(true);};
   const addProf=async()=>{if(!profF.nome||!profF.user||!profF.pass)return;const item={...profF,id:profF.id||"p"+Date.now()};const nl=profF.id?profs.map(p=>p.id===profF.id?item:p):[...profs,item];setProfs(nl);await sPf(nl);setShowProf(false);resetProfF();t2(profF.id?"✅ Professor atualizado!":"✅ Professor adicionado!");};
@@ -851,13 +915,15 @@ export default function App() {
               {(c.eventos||[]).length===0?<p style={{color:"#888",fontSize:13}}>Nenhum evento.</p>
                 :<div style={{display:"flex",flexDirection:"column",gap:10,maxHeight:340,overflowY:"auto"}}>{c.eventos.map(ev=>(
                   <div key={ev.id} style={{background:"#F8FAFC",borderRadius:10,padding:12,border:"1px solid #E2E8F0"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}><div><p style={{fontWeight:800,fontSize:14,color:N,margin:0}}>{ev.nome}</p><p style={{fontSize:12,color:"#64748B",margin:0}}>{fmtD(ev.data)}{ev.local?" · "+ev.local:""}{ev.taxa?" · "+fmtR(ev.taxa):""}</p></div><div style={{display:"flex",gap:5}}><Btn small color={GR} onClick={()=>expConv(c,ev)}>📲</Btn><button onClick={()=>delEv(c.id,ev.id)} style={{background:"none",border:"none",color:R,cursor:"pointer",fontSize:14}}>🗑</button></div></div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}><div><p style={{fontWeight:800,fontSize:14,color:N,margin:0}}>{ev.nome}</p><p style={{fontSize:12,color:"#64748B",margin:0}}>{fmtD(ev.data)}{ev.local?" · "+ev.local:""}{ev.taxa?" · "+fmtR(ev.taxa):""}</p>{ev.taxa&&(()=>{const fs=campFinanceSummary(c,ev);return <p style={{fontSize:11,color:"#64748B",margin:"3px 0 0",fontWeight:700}}>Financeiro: {fs.pend} pend. · {fs.pago} pago(s) · {fs.isento} isento(s){fs.sem?" · "+fs.sem+" sem lançamento":""}</p>;})()}</div><div style={{display:"flex",gap:5}}>{ev.taxa&&<Btn small color={OR} onClick={()=>syncCampFinance(c,ev)}>💰</Btn>}<Btn small color={GR} onClick={()=>expConv(c,ev)}>📲</Btn><button onClick={()=>delEv(c.id,ev.id)} style={{background:"none",border:"none",color:R,cursor:"pointer",fontSize:14}}>🗑</button></div></div>
                     <p style={{fontSize:11,fontWeight:700,color:"#64748B",margin:"0 0 5px",textTransform:"uppercase"}}>Convocados ({ev.convocados.length})</p>
                     <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>{ev.convocados.map(id=>{const a=athletes.find(x=>x.id===id);return a?<span key={id} style={{background:BL+"15",color:BL,border:`1px solid ${BL}44`,borderRadius:6,padding:"2px 7px",fontSize:11,fontWeight:700}}>{a.nomeAtleta}{a.posicao?" · "+a.posicao:""}</span>:null;})}</div>
-                    <details><summary style={{fontSize:12,cursor:"pointer",color:"#64748B",fontWeight:600}}>Selecionar atletas com inscrição ou taxa paga/isenta</summary>
-                      <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4,maxHeight:150,overflowY:"auto"}}>{(()=>{const ids=[...new Set([...c.inscritos,...elig.filter(a=>hasTaxaGeralOk(a.id)).map(a=>a.id)])];return ids.map(id=>{const a=athletes.find(x=>x.id===id);if(!a)return null;const conv=ev.convocados.includes(id);return(
+                    <details><summary style={{fontSize:12,cursor:"pointer",color:"#64748B",fontWeight:600}}>Selecionar atletas e revisar financeiro da competição</summary>
+                      <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4,maxHeight:190,overflowY:"auto"}}>{(()=>{const ids=[...new Set([...c.inscritos,...campFinanceIds(c,ev),...elig.filter(a=>hasTaxaGeralOk(a.id)).map(a=>a.id)])];return ids.map(id=>{const a=athletes.find(x=>x.id===id);if(!a)return null;const conv=ev.convocados.includes(id);const pgEv=findCampPgto(c,ev,id);const st=pgEv?pgEv.status:"Sem lançamento";const stColor=st==="Pago"?"#059669":st==="Isento"?OR:R;return(
                         <div key={id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:7,background:conv?"#EFF6FF":"white",border:`1px solid ${conv?"#93C5FD":"#E2E8F0"}`}}>
                           <span style={{flex:1,fontSize:12,fontWeight:600}}>{a.nomeAtleta} <span style={{fontSize:11,color:"#94A3B8"}}>({a.categoria}{a.posicao?" · "+a.posicao:""} · {c.inscritos.includes(id)?"Inscrito":taxaLabel(id)})</span></span>
+                          {ev.taxa&&<span style={{fontSize:10,color:stColor,fontWeight:800,whiteSpace:"nowrap"}}>{st}</span>}
+                          {ev.taxa&&<div style={{display:"flex",gap:3}}><button onClick={()=>setCampPgtoStatus(c,ev,id,"Pago")} style={{background:"#DCFCE7",color:"#166534",border:"1px solid #86EFAC",borderRadius:5,padding:"2px 5px",cursor:"pointer",fontWeight:800,fontSize:10}}>Pago</button><button onClick={()=>setCampPgtoStatus(c,ev,id,"Isento")} style={{background:"#FFF7ED",color:OR,border:"1px solid #FDBA74",borderRadius:5,padding:"2px 5px",cursor:"pointer",fontWeight:800,fontSize:10}}>Isento</button></div>}
                           <button onClick={()=>togConv(c,ev.id,id)} style={{background:conv?OR:BL,color:"white",border:"none",borderRadius:5,padding:"3px 8px",cursor:"pointer",fontWeight:700,fontSize:11}}>{conv?"Rem.":"Conv."}</button>
                         </div>
                       );});})()}</div>
@@ -1448,6 +1514,7 @@ h1{font-size:20px;color:#1B2A4A;margin:0}.sub{font-size:11px;color:#94A3B8;margi
 .sig-a{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:28px}
 .sig-b{border-top:2px solid #1B2A4A;padding-top:6px;text-align:center;font-size:11px;color:#64748B;text-transform:uppercase}
 .foot{margin-top:24px;text-align:center;font-size:10px;color:#94A3B8;border-top:1px solid #E2E8F0;padding-top:10px}
+${docAttachmentStyles}
 @media print{body{padding:14px}}</style></head><body>
 <div class="hdr"><div class="logo"><img src="${getLogoSrc()}" alt="Agrifut Itajaí EC"/></div><div><h1>Itajaí Agrifut</h1><p class="sub">CNPJ ${CNPJ} · itajaiesporteclube@gmail.com · (47) 99777-6191</p></div></div>
 <div class="sec"><div class="sec-t">Dados do Atleta</div><div class="grid">
@@ -1486,6 +1553,7 @@ ${docs.map(d=>`<div class="${d.ok?"dok":"dno"}">${d.ok?"✅":"❌"}<br/>${d.l}</
 <div class="sig-b"><div style="height:80px"></div><div>Data: &nbsp;&nbsp;&nbsp;/&nbsp;&nbsp;&nbsp;/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div></div>
 </div>
 <div class="foot">Itajaí Esporte Clube — Agrifut · CNPJ ${CNPJ} · Gerado em ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR")}</div>
+${docAttachmentsHTML(a)}
 </body></html>`;
   useEffect(()=>{
     if(!iRef.current) return;
