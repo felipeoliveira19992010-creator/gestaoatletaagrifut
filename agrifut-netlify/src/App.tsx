@@ -66,6 +66,7 @@ const fmtTel = v => { const d=v.replace(/\D/g,"").slice(0,11); if(!d)return""; i
 const fmtCard = v => v.replace(/\D/g,"").slice(0,16).replace(/(\d{4})(?=\d)/g,"$1 ");
 const fmtExp = v => { const d=v.replace(/\D/g,"").slice(0,4); return d.length>2?d.slice(0,2)+"/"+d.slice(2):d; };
 const fmtR = v => v ? `R$ ${Number(v).toFixed(2).replace(".",",")}` : "-";
+const normTxt = v => String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
 const sortName = (a,b) => (a.nomeAtleta||"").localeCompare(b.nomeAtleta||"", "pt-BR", {sensitivity:"base"});
 const isBirthdayToday = a => {
   if(!a.dataNasc) return false;
@@ -510,7 +511,7 @@ export default function App() {
   const [presDate,setPresDate]=useState(tod());const[presProj,setPresProj]=useState("");const[presGi,setPresGi]=useState(null);const[presCat,setPresCat]=useState("");const[presExpPer,setPresExpPer]=useState("dia");
   const [showPgto,setShowPgto]=useState(false);const[pgtoF,setPgtoF]=useState({tipo:"",desc:"",valor:"",status:"Pendente",data:tod(),aId:"",comp:null});
   const [editPgto,setEditPgto]=useState(null);
-  const [fPSt,setFPSt]=useState("all");const[fPTp,setFPTp]=useState("all");const[fPCats,setFPCats]=useState([]);
+  const [fPSt,setFPSt]=useState("all");const[fPTp,setFPTp]=useState("all");const[fPCats,setFPCats]=useState([]);const[fPAth,setFPAth]=useState("");
   const [showCamp,setShowCamp]=useState(false);const[campF,setCampF]=useState({nome:"",data:"",cat:"",proj:""});const[selCamp,setSelCamp]=useState(null);
   const [showEv,setShowEv]=useState(false);const[evF,setEvF]=useState({nome:"",data:"",local:"",taxa:""});
   const [showProf,setShowProf]=useState(false);const[profF,setProfF]=useState({nome:"",user:"",pass:"",projeto:"",categoria:""});
@@ -785,7 +786,7 @@ export default function App() {
 
   // ── Athletes ──────────────────────────────────────────
   const renderAthletes=()=>{
-    const listAll=filterFn=>athletes.filter(filterFn).filter(a=>!srch||a.nomeAtleta.toLowerCase().includes(srch.toLowerCase())||(a.nomeResp||"").toLowerCase().includes(srch.toLowerCase()));
+    const listAll=filterFn=>athletes.filter(filterFn).filter(a=>!normTxt(srch)||normTxt(a.nomeAtleta).includes(normTxt(srch))||normTxt(a.nomeResp).includes(normTxt(srch)));
     const searchBar=(extra=null)=>(
       <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12,flexWrap:"wrap",background:"white",borderRadius:12,padding:"10px 14px",boxShadow:"0 2px 8px #0001"}}>
         <Btn small outline color={N} onClick={()=>{setProjV(null);setSrch("");}}>← Projetos</Btn>
@@ -805,6 +806,12 @@ export default function App() {
     }
     return (
       <div style={{maxWidth:1100,margin:"24px auto",padding:"0 16px"}}>
+        <div style={{background:"white",borderRadius:12,padding:"10px 14px",boxShadow:"0 2px 8px #0001",marginBottom:16,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,fontWeight:800,color:N,textTransform:"uppercase",letterSpacing:1}}>Buscar atleta</span>
+          <input value={srch} onChange={e=>setSrch(e.target.value)} placeholder="Digite o nome do atleta ou responsável" style={{flex:1,minWidth:240,border:"1.5px solid #ddd",borderRadius:8,padding:"8px 11px",fontSize:14,outline:"none"}}/>
+          {srch&&<button onClick={()=>setSrch("")} style={{background:"#F1F5F9",color:"#64748B",border:"1px solid #CBD5E1",borderRadius:7,padding:"6px 10px",cursor:"pointer",fontWeight:700,fontSize:12}}>Limpar</button>}
+        </div>
+        {srch&&<div style={{marginBottom:18}}>{athList(listAll(()=>true))}</div>}
         {bdays.length>0&&(
           <div style={{background:"white",borderRadius:12,padding:14,boxShadow:"0 2px 8px #0001",marginBottom:16,borderLeft:`4px solid ${G}`}}>
             <p style={{margin:"0 0 8px",fontWeight:800,fontSize:14,color:N}}>🎂 Aniversariantes do Dia</p>
@@ -1148,10 +1155,15 @@ export default function App() {
 
   // ── Financeiro ────────────────────────────────────────
   const finCatOf=pg=>athletes.find(x=>x.id===pg.aId)?.categoria||"Sem categoria";
+  const finAthOf=pg=>athletes.find(x=>Number(x.id)===Number(pg.aId));
+  const finAthName=pg=>finAthOf(pg)?.nomeAtleta||"Sem atleta";
   const finVal=pg=>Number(pg.valor||0);
   const finCatOpts=[...CATS,"Sem categoria"];
   const finCatMatch=pg=>fPCats.length===0||fPCats.includes(finCatOf(pg));
-  const filtPgto=pagamentos.filter(p=>(fPSt==="all"||p.status===fPSt)&&(fPTp==="all"||p.tipo===fPTp)&&finCatMatch(p));
+  const finAthMatch=pg=>!normTxt(fPAth)||normTxt(finAthName(pg)).includes(normTxt(fPAth));
+  const histAthMatch=h=>!normTxt(fPAth)||normTxt(h.atleta).includes(normTxt(fPAth));
+  const filtPgto=pagamentos.filter(p=>(fPSt==="all"||p.status===fPSt)&&(fPTp==="all"||p.tipo===fPTp)&&finCatMatch(p)&&finAthMatch(p));
+  const filtFinHist=finHist.filter(histAthMatch);
   const sumPg=(rows,status=null)=>rows.filter(p=>!status||p.status===status).reduce((s,p)=>s+finVal(p),0);
   const tGeral=sumPg(filtPgto);
   const tPago=sumPg(filtPgto,"Pago");
@@ -1162,6 +1174,53 @@ export default function App() {
     return {cat,rows,total:sumPg(rows),pago:sumPg(rows,"Pago"),pend:sumPg(rows,"Pendente"),isentos:rows.filter(p=>p.status==="Isento").length};
   }).filter(r=>fPCats.length>0||r.rows.length>0);
   const toggleFinCat=cat=>setFPCats(list=>list.includes(cat)?list.filter(c=>c!==cat):[...list,cat]);
+  const athPayments=a=>pagamentos.filter(p=>Number(p.aId)===Number(a.id)).sort((x,y)=>String(y.data||"").localeCompare(String(x.data||"")));
+  const athFinHist=a=>finHist.filter(h=>Number(h.aId)===Number(a.id)||normTxt(h.atleta)===normTxt(a.nomeAtleta)).sort((x,y)=>new Date(y.data||0)-new Date(x.data||0));
+  const renderAthFinanceBox=(a,{allowPay=false}={})=>{
+    const myPg=athPayments(a);const myHist=athFinHist(a);
+    const paid=sumPg(myPg,"Pago");const pend=sumPg(myPg,"Pendente");const isentos=myPg.filter(pg=>pg.status==="Isento").length;
+    return(
+      <div style={{background:"white",borderRadius:16,padding:18,boxShadow:"0 2px 12px #0001",marginBottom:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:12}}>
+          <p style={{fontWeight:800,fontSize:14,color:N,margin:0}}>💰 Histórico Financeiro do Atleta</p>
+          <Badge text={a.nomeAtleta} color={N}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
+          {[{l:"Pago",v:fmtR(paid),c:"#059669"},{l:"Pendente",v:fmtR(pend),c:R},{l:"Isenções",v:isentos,c:OR},{l:"Registros",v:myPg.length,c:N}].map(s=><div key={s.l} style={{background:"#F8FAFC",borderRadius:8,padding:"8px 10px",borderLeft:"3px solid "+s.c}}><p style={{margin:0,fontWeight:900,fontSize:15,color:s.c}}>{s.v}</p><p style={{margin:0,fontSize:10,color:"#64748B",fontWeight:800,textTransform:"uppercase"}}>{s.l}</p></div>)}
+        </div>
+        {myPg.length===0?<p style={{color:"#888",fontSize:13,margin:"0 0 12px"}}>Nenhuma cobrança registrada para este atleta.</p>:(
+          <div style={{overflowX:"auto",marginBottom:12}}>
+            <table style={{width:"100%",borderCollapse:"collapse",minWidth:700}}>
+              <thead><tr style={{background:N}}>{["Atleta","Tipo","Valor","Data","Status","Código"].map(h=><th key={h} style={{padding:"7px 9px",textAlign:"left",fontSize:10,fontWeight:900,color:G,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+              <tbody>{myPg.map((pg,i)=>{const sc=pg.status==="Pago"?"#059669":pg.status==="Pendente"?R:OR;return(
+                <tr key={pg.id} style={{background:i%2===0?"white":"#F8FAFC",borderBottom:"1px solid #E2E8F0"}}>
+                  <td style={{padding:"8px 9px",fontSize:12,fontWeight:800,color:N}}>{a.nomeAtleta}</td>
+                  <td style={{padding:"8px 9px",fontSize:12}}><span style={{fontWeight:700}}>{pg.tipo}</span>{pg.desc&&<span style={{display:"block",fontSize:10,color:"#64748B"}}>{pg.desc}</span>}</td>
+                  <td style={{padding:"8px 9px",fontSize:12,fontWeight:800}}>{pg.valor?fmtR(pg.valor):"—"}</td>
+                  <td style={{padding:"8px 9px",fontSize:11,color:"#64748B"}}>{fmtD(pg.data)}</td>
+                  <td style={{padding:"8px 9px"}}><Badge text={pg.status} color={sc}/></td>
+                  <td style={{padding:"8px 9px",fontSize:11,color:"#64748B",fontFamily:"monospace"}}>{pg.txn||"—"}</td>
+                </tr>
+              );})}</tbody>
+            </table>
+          </div>
+        )}
+        {allowPay&&myPg.some(pg=>pg.status==="Pendente")&&<p style={{fontSize:12,color:"#64748B",margin:"0 0 8px"}}>Cobranças pendentes podem ser pagas pelo botão em cada item abaixo.</p>}
+        {allowPay&&myPg.filter(pg=>pg.status==="Pendente").map(pg=><button key={"pay"+pg.id} onClick={()=>setStripeTarget({pgto:pg,atleta:a})} style={{margin:"0 0 8px",background:"linear-gradient(135deg,#635BFF,#4F46E5)",color:"white",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,fontSize:13,cursor:"pointer",width:"100%"}}>💳 Pagar {pg.tipo}{pg.valor?" - "+fmtR(pg.valor):""}</button>)}
+        <div style={{borderTop:"1px solid #E2E8F0",paddingTop:10}}>
+          <p style={{margin:"0 0 8px",fontSize:12,fontWeight:900,color:N,textTransform:"uppercase",letterSpacing:1}}>Movimentações registradas</p>
+          {myHist.length===0?<p style={{color:"#888",fontSize:13,margin:0}}>Nenhuma movimentação registrada para este atleta.</p>:(
+            <div style={{maxHeight:220,overflow:"auto",border:"1px solid #E2E8F0",borderRadius:8}}>
+              <table style={{width:"100%",borderCollapse:"collapse",minWidth:640}}>
+                <thead><tr style={{background:"#F8FAFC"}}>{["Data","Ação","Atleta","Tipo","Valor","Status"].map(h=><th key={h} style={{padding:"7px 9px",textAlign:"left",fontSize:10,fontWeight:900,color:"#64748B",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                <tbody>{myHist.map((h,i)=><tr key={h.id||i} style={{background:i%2===0?"white":"#F8FAFC",borderTop:"1px solid #E2E8F0"}}><td style={{padding:"7px 9px",fontSize:11,color:"#64748B",whiteSpace:"nowrap"}}>{new Date(h.data).toLocaleString("pt-BR")}</td><td style={{padding:"7px 9px",fontSize:12,fontWeight:800,color:N}}>{h.action}</td><td style={{padding:"7px 9px",fontSize:12}}>{h.atleta||a.nomeAtleta}</td><td style={{padding:"7px 9px",fontSize:12}}>{h.tipo||"—"}</td><td style={{padding:"7px 9px",fontSize:12,fontWeight:800}}>{h.valor?fmtR(h.valor):"—"}</td><td style={{padding:"7px 9px",fontSize:12}}>{h.status||"—"}</td></tr>)}</tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
   const renderFin=()=>(
     <div style={{maxWidth:1100,margin:"24px auto",padding:"0 16px"}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:14}}>
@@ -1179,6 +1238,11 @@ export default function App() {
           <select value={fPTp} onChange={e=>setFPTp(e.target.value)} style={{border:"1.5px solid #ddd",borderRadius:8,padding:"8px 11px",fontSize:14,outline:"none",background:"white",width:"100%"}}>
             <option value="all">Todos</option>{PTYPES.map(t=><option key={t} value={t}>{t}</option>)}
           </select>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:230,flex:1}}>
+          <label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:.5}}>Atleta</label>
+          <input list="financeiro-atletas" value={fPAth} onChange={e=>setFPAth(e.target.value)} placeholder="Filtrar pelo nome do atleta" style={{border:"1.5px solid #ddd",borderRadius:8,padding:"8px 11px",fontSize:14,outline:"none",background:"white",width:"100%",boxSizing:"border-box"}}/>
+          <datalist id="financeiro-atletas">{athletes.slice().sort(sortName).map(a=><option key={a.id} value={a.nomeAtleta}/>)}</datalist>
         </div>
         <Btn color={G} onClick={()=>{setEditPgto(null);resetPgtoF();setShowPgto(true);}} xst={{marginLeft:"auto"}}>+ Novo Registro</Btn>
         <div style={{flexBasis:"100%",borderTop:"1px solid #F1F5F9",paddingTop:11}}>
@@ -1249,13 +1313,13 @@ export default function App() {
       <div style={{background:"white",borderRadius:12,overflow:"hidden",boxShadow:"0 2px 8px #0001",marginTop:12}}>
         <div style={{padding:"12px 14px",borderBottom:"1px solid #F1F5F9",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <p style={{margin:0,fontWeight:800,fontSize:14,color:N}}>Histórico de Movimentação Financeira</p>
-          <Badge text={finHist.length+" registros"} color={N}/>
+          <Badge text={filtFinHist.length+" registros"} color={N}/>
         </div>
-        {finHist.length===0?<p style={{padding:22,textAlign:"center",color:"#888",fontSize:13,margin:0}}>Nenhuma movimentação registrada.</p>:(
+        {filtFinHist.length===0?<p style={{padding:22,textAlign:"center",color:"#888",fontSize:13,margin:0}}>Nenhuma movimentação registrada para os filtros selecionados.</p>:(
           <div style={{maxHeight:260,overflow:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",minWidth:760}}>
               <thead><tr style={{background:"#F8FAFC"}}>{["Data","Ação","Atleta","Tipo","Valor","Status","Obs."].map(h=><th key={h} style={{padding:"8px 11px",textAlign:"left",fontSize:11,fontWeight:800,color:"#64748B",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-              <tbody>{finHist.map((h,i)=><tr key={h.id||i} style={{background:i%2===0?"white":"#F8FAFC",borderBottom:"1px solid #F1F5F9"}}><td style={{padding:"8px 11px",fontSize:12,color:"#64748B",whiteSpace:"nowrap"}}>{new Date(h.data).toLocaleString("pt-BR")}</td><td style={{padding:"8px 11px",fontSize:13,fontWeight:700,color:N}}>{h.action}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.atleta}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.tipo}</td><td style={{padding:"8px 11px",fontSize:13,fontWeight:700}}>{h.valor?fmtR(h.valor):"—"}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.status||"—"}</td><td style={{padding:"8px 11px",fontSize:12,color:"#64748B"}}>{h.extra||"—"}</td></tr>)}</tbody>
+              <tbody>{filtFinHist.map((h,i)=><tr key={h.id||i} style={{background:i%2===0?"white":"#F8FAFC",borderBottom:"1px solid #F1F5F9"}}><td style={{padding:"8px 11px",fontSize:12,color:"#64748B",whiteSpace:"nowrap"}}>{new Date(h.data).toLocaleString("pt-BR")}</td><td style={{padding:"8px 11px",fontSize:13,fontWeight:700,color:N}}>{h.action}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.atleta}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.tipo}</td><td style={{padding:"8px 11px",fontSize:13,fontWeight:700}}>{h.valor?fmtR(h.valor):"—"}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.status||"—"}</td><td style={{padding:"8px 11px",fontSize:12,color:"#64748B"}}>{h.extra||"—"}</td></tr>)}</tbody>
             </table>
           </div>
         )}
@@ -1286,7 +1350,6 @@ export default function App() {
         </div>
       </div>
     );
-    const myPg=pagamentos.filter(p=>p.aId===a.id);
     const missing=getMissingDocs(a);
     return (
       <div style={{maxWidth:700,margin:"24px auto",padding:"0 16px"}}>
@@ -1314,15 +1377,7 @@ export default function App() {
           {docTab==="ver"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{[{k:"rgAtleta",l:"RG Atleta"},{k:"rgResp",l:"RG Responsável"},{k:"comprResid",l:"Comp. Residência"},{k:"laudo",l:"Laudo"}].map(({k,l})=><div key={k} style={{background:a[k]?"#F0FFF4":"#FFF9F9",borderRadius:8,padding:10,border:`1px solid ${a[k]?"#86EFAC":R+"44"}`,textAlign:"center"}}><p style={{margin:"0 0 4px",fontSize:18}}>{a[k]?"✅":"❌"}</p><p style={{margin:0,fontSize:11,fontWeight:700,color:a[k]?"#065F46":R}}>{l}</p>{a[k]&&<a href={a[k].data} download={a[k].name} style={{fontSize:11,color:BL,fontWeight:700}}>⬇</a>}</div>)}</div>}
           {docTab==="add"&&<div style={{display:"flex",flexDirection:"column",gap:10}}>{[{k:"rgAtleta",l:"🪪 RG do Atleta"},{k:"rgResp",l:"🪪 RG do Responsável"},{k:"comprResid",l:"🏠 Comprovante de Residência"},{k:"laudo",l:"📋 Laudo Médico"}].map(({k,l})=><FilePick key={k} label={l} file={null} onChange={async f=>{const nl=athletes.map(x=>x.id===a.id?{...x,[k]:f}:x);setAthletes(nl);await sA(nl);t2("✅ Documento salvo!");setDocTab("ver");}}/>)}</div>}
         </div>
-        <div style={{background:"white",borderRadius:16,padding:18,boxShadow:"0 2px 12px #0001"}}>
-          <p style={{fontWeight:800,fontSize:14,color:N,margin:"0 0 12px"}}>💰 Financeiro</p>
-          {myPg.length===0?<p style={{color:"#888",fontSize:13}}>Nenhuma cobrança registrada.</p>:myPg.map(pg=>{const sc=pg.status==="Pago"?"#059669":pg.status==="Pendente"?R:OR;return(
-            <div key={pg.id} style={{background:"#F8FAFC",borderRadius:8,padding:"10px 12px",marginBottom:8,border:"1px solid #E2E8F0"}}>
-              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}><span style={{flex:1,fontSize:13,fontWeight:600}}>{pg.tipo}{pg.desc?" — "+pg.desc:""}</span>{pg.valor&&<span style={{fontSize:13,fontWeight:700,color:N}}>{fmtR(pg.valor)}</span>}<Badge text={pg.status} color={sc}/>{pg.txn&&<span style={{fontSize:11,fontFamily:"monospace",color:"#64748B",background:"#F1F5F9",padding:"1px 6px",borderRadius:4}}>{pg.txn}</span>}</div>
-              {pg.status==="Pendente"&&<button onClick={()=>setStripeTarget({pgto:pg,atleta:a})} style={{marginTop:8,background:"linear-gradient(135deg,#635BFF,#4F46E5)",color:"white",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,fontSize:13,cursor:"pointer",width:"100%"}}>💳 Pagar (PIX ou Cartão)</button>}
-            </div>
-          );})}
-        </div>
+        {renderAthFinanceBox(a,{allowPay:true})}
       </div>
     );
   };
@@ -1351,6 +1406,7 @@ export default function App() {
           </div>
         )}
         {a.token&&<div style={{marginBottom:14}}><LinkBox token={a.token}/></div>}
+        {renderAthFinanceBox(a)}
         <div style={{display:"flex",gap:8,flexWrap:"wrap",paddingTop:10,borderTop:"1px solid #eee"}}>
           <Btn color={GR} small onClick={()=>waOpen("55"+a.telResp.replace(/\D/g,""),`Olá ${a.nomeResp}! Contato Agrifut 🟡⚫`)}>📲 WhatsApp</Btn>
           {docsMsg&&<Btn color="#059669" small onClick={()=>waOpen("55"+a.telResp.replace(/\D/g,""),docsMsg)}>📋 Enviar Docs Pendentes</Btn>}
