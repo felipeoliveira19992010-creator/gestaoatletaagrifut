@@ -535,7 +535,8 @@ export default function App() {
   const [itemF,setItemF] = useState({nome:'',categoria:'Item de Venda',preco:'',tamanhos:[],descricao:'',foto:null,qtdInput:{}});
   const [fEstCat,setFEstCat] = useState('all');
   const [pedidoItem,setPedidoItem] = useState(null);
-  const [pedidoF,setPedidoF] = useState({tamanho:'',qtd:'1'});
+  const [pedidoF,setPedidoF] = useState({tamanho:'',qtd:'1',aId:''});
+  const [itemSizeInput,setItemSizeInput]=useState("");
   const [sigTarget,setSigTarget] = useState(null);
   const [pdfTarget,setPdfTarget] = useState(null); // {atleta, sig}
 
@@ -671,8 +672,8 @@ export default function App() {
   const togPres=async aId=>{const cur=getPres();const pres=cur.presentes.includes(aId)?cur.presentes.filter(x=>x!==aId):[...cur.presentes,aId];const ex=presencas.find(p=>p.data===presDate&&p.proj===presProj&&p.cat===presCat);const entry={data:presDate,proj:presProj,cat:presCat,id:Date.now(),presentes:pres};const nl=ex?presencas.map(p=>(p.data===presDate&&p.proj===presProj&&p.cat===presCat)?{...p,presentes:pres}:p):[...presencas,entry];setPresencas(nl);await sPr(nl);};
   const expPres=()=>{const {start,end,label}=rangePres(presDate,presExpPer);const al=athletes.filter(a=>a.projeto===presProj&&presCats().includes(a.categoria)).sort(sortName);const pKeys=[presCat,...presCats()].filter(Boolean);const recDates=presencas.filter(p=>p.proj===presProj&&pKeys.includes(p.cat)&&p.data>=start&&p.data<=end).map(p=>p.data);const dates=(presExpPer==="dia"?[presDate]:[...new Set(recDates)].sort());const rows=[];dates.forEach(dt=>{const rec=getPres(dt);al.forEach(a=>rows.push([a.nomeAtleta,a.posicao||"",a.categoria,a.projeto,rec.presentes.includes(a.id)?"Presente":"Ausente",fmtD(dt)]));});expCSV([["Nome","Posição","Categoria","Projeto","Presença","Data"],...rows],`presenca_${presProj}_${presCat}_${label}_${start}_${end}.csv`);t2("📊 Planilha baixada!");};
 
-  const addCamp=async()=>{if(!campF.nome)return;const nl=[...camps,{...campF,id:Date.now(),inscritos:[],eventos:[]}];setCamps(nl);await sC(nl);setShowCamp(false);setCampF({nome:"",data:"",cat:"",proj:""});t2("✅ Campeonato criado!");};
-  const delCamp=async id=>{const nl=camps.filter(c=>c.id!==id);setCamps(nl);await sC(nl);setSelCamp(null);};
+  const addCamp=async()=>{if(user?.role!=="admin"||!campF.nome)return;const nl=[...camps,{...campF,id:Date.now(),inscritos:[],eventos:[]}];setCamps(nl);await sC(nl);setShowCamp(false);setCampF({nome:"",data:"",cat:"",proj:""});t2("✅ Campeonato criado!");};
+  const delCamp=async id=>{if(user?.role!=="admin")return;const nl=camps.filter(c=>c.id!==id);setCamps(nl);await sC(nl);setSelCamp(null);};
   const campPayDesc=(camp,ev)=>`${camp.nome} - ${ev.nome}`;
   const campFinanceIds=(camp,ev,list=pagamentos)=>list.filter(pg=>pg.tipo==="Campeonato"&&((pg.campId===camp.id&&pg.evId===ev.id)||pg.desc===campPayDesc(camp,ev))).map(pg=>Number(pg.aId));
   const findCampPgto=(camp,ev,aId,list=pagamentos)=>list.find(pg=>Number(pg.aId)===Number(aId)&&pg.tipo==="Campeonato"&&((pg.campId===camp.id&&pg.evId===ev.id)||pg.desc===campPayDesc(camp,ev)));
@@ -680,6 +681,7 @@ export default function App() {
   const campPayLabel=(camp,ev,aId)=>{const pg=findCampPgto(camp,ev,aId);return pg?`${pg.status}${pg.valor?" · "+fmtR(pg.valor):""}`:"Pendente não lançado";};
   const campFinanceSummary=(camp,ev)=>{const ids=[...new Set([...(camp.inscritos||[]),...campFinanceIds(camp,ev)])];const rows=ids.map(id=>findCampPgto(camp,ev,id));return{pend:rows.filter(pg=>pg&&pg.status==="Pendente").length,pago:rows.filter(pg=>pg&&pg.status==="Pago").length,isento:rows.filter(pg=>pg&&pg.status==="Isento").length,sem:rows.filter(pg=>!pg).length,total:ids.length};};
   const syncCampFinance=async(camp,evOrEvents,ids=null,silent=false)=>{
+    if(user?.role!=="admin"){if(!silent)t2("⚠️ Apenas admin pode gerar pendências da competição.");return false;}
     const events=(Array.isArray(evOrEvents)?evOrEvents:[evOrEvents]).filter(ev=>ev&&Number(ev.taxa||0)>0);
     const targetIds=[...new Set((ids||camp.inscritos||[]).map(Number).filter(Boolean))];
     if(!events.length){if(!silent)t2("⚠️ Informe a taxa da partida para gerar pendências.");return false;}
@@ -706,6 +708,7 @@ export default function App() {
     return true;
   };
   const setCampPgtoStatus=async(camp,ev,aId,status)=>{
+    if(user?.role!=="admin")return;
     if(!Number(ev.taxa||0)){t2("⚠️ Informe a taxa da partida primeiro.");return;}
     let nl=pagamentos.map(p=>({...p}));
     let pg=findCampPgto(camp,ev,aId,nl);
@@ -717,11 +720,11 @@ export default function App() {
   const hasInscricaoOk=aId=>pagamentos.some(pg=>pg.aId===aId&&pg.tipo==="Taxa de Inscrição"&&(pg.status==="Pago"||pg.status==="Isento"));
   const hasTaxaGeralOk=aId=>pagamentos.some(pg=>pg.aId===aId&&pg.tipo!=="Uniforme"&&(pg.status==="Pago"||pg.status==="Isento"));
   const taxaLabel=aId=>{const pg=pagamentos.find(x=>x.aId===aId&&x.tipo!=="Uniforme"&&(x.status==="Pago"||x.status==="Isento"));return pg?`${pg.tipo}: ${pg.status}`:"Sem taxa";};
-  const togInsc=async(camp,aId)=>{if(!hasInscricaoOk(aId)){t2("⚠️ Atleta sem taxa de inscrição paga ou isenta!");return;}const adding=!camp.inscritos.includes(aId);const ins=adding?[...camp.inscritos,aId]:camp.inscritos.filter(x=>x!==aId);const nl=camps.map(c=>c.id===camp.id?{...c,inscritos:ins}:c);setCamps(nl);await sC(nl);const nc=nl.find(c=>c.id===camp.id);setSelCamp(nc);if(adding)await syncCampFinance(nc,nc.eventos||[],[aId],true);};
-  const addEv=async()=>{if(!evF.nome||!selCamp)return;const ev={...evF,id:Date.now(),convocados:[]};const nl=camps.map(c=>c.id===selCamp.id?{...c,eventos:[...(c.eventos||[]),ev]}:c);setCamps(nl);await sC(nl);const nc=nl.find(c=>c.id===selCamp.id);setSelCamp(nc);if(Number(ev.taxa||0)>0)await syncCampFinance(nc,ev,nc.inscritos||[],true);setShowEv(false);setEvF({nome:"",data:"",local:"",taxa:""});t2("✅ Evento criado!");};
+  const togInsc=async(camp,aId)=>{if(user?.role!=="admin")return;if(!hasInscricaoOk(aId)){t2("⚠️ Atleta sem taxa de inscrição paga ou isenta!");return;}const adding=!camp.inscritos.includes(aId);const ins=adding?[...camp.inscritos,aId]:camp.inscritos.filter(x=>x!==aId);const nl=camps.map(c=>c.id===camp.id?{...c,inscritos:ins}:c);setCamps(nl);await sC(nl);const nc=nl.find(c=>c.id===camp.id);setSelCamp(nc);if(adding)await syncCampFinance(nc,nc.eventos||[],[aId],true);};
+  const addEv=async()=>{if(user?.role!=="admin"||!evF.nome||!selCamp)return;const ev={...evF,id:Date.now(),convocados:[]};const nl=camps.map(c=>c.id===selCamp.id?{...c,eventos:[...(c.eventos||[]),ev]}:c);setCamps(nl);await sC(nl);const nc=nl.find(c=>c.id===selCamp.id);setSelCamp(nc);if(Number(ev.taxa||0)>0)await syncCampFinance(nc,ev,nc.inscritos||[],true);setShowEv(false);setEvF({nome:"",data:"",local:"",taxa:""});t2("✅ Evento criado!");};
   const togConv=async(camp,evId,aId)=>{const ev=(camp.eventos||[]).find(e=>e.id===evId);if(!camp.inscritos.includes(aId)&&!campPayOk(camp,ev,aId)&&!hasTaxaGeralOk(aId)){t2("⚠️ Atleta sem inscrição ou taxa paga/isenta!");return;}const nl=camps.map(c=>c.id===camp.id?{...c,eventos:c.eventos.map(ev=>ev.id===evId?{...ev,convocados:ev.convocados.includes(aId)?ev.convocados.filter(x=>x!==aId):[...ev.convocados,aId]}:ev)}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===camp.id));};
-  const delEv=async(cId,eId)=>{const nl=camps.map(c=>c.id===cId?{...c,eventos:c.eventos.filter(e=>e.id!==eId)}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===cId));};
-  const expConv=(camp,ev)=>{const list=ev.convocados.map((id,i)=>{const a=athletes.find(x=>x.id===id);const taxa=ev.taxa?` · Taxa: ${campPayLabel(camp,ev,id)}`:"";return`${i+1}. ${a?a.nomeAtleta:"?"} (${a?a.categoria:"—"}${a&&a.posicao?" · "+a.posicao:""}${taxa})`;});const msg=`🏆 *${camp.nome}*\n⚽ *${ev.nome}*\n📅 ${fmtD(ev.data)}${ev.local?"\n📍 "+ev.local:""}${ev.taxa?"\n💰 "+fmtR(ev.taxa):""}\n\n👕 *CONVOCADOS (${ev.convocados.length}):*\n${list.join("\n")}\n\n_Itajaí Agrifut 🟡⚫_`;waOpen(WA_ADMIN,msg);};
+  const delEv=async(cId,eId)=>{if(user?.role!=="admin")return;const nl=camps.map(c=>c.id===cId?{...c,eventos:c.eventos.filter(e=>e.id!==eId)}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===cId));};
+  const expConv=(camp,ev)=>{const list=ev.convocados.map((id,i)=>{const a=athletes.find(x=>x.id===id);const idade=a&&ageOf(a.dataNasc)?`${ageOf(a.dataNasc)} anos`:"idade não informada";return`${i+1}. ${a?a.nomeAtleta:"Atleta não encontrado"} - ${idade}`;});const msg=`Competição: ${camp.nome||"-"}\nPartida: ${ev.nome||"-"}\nData: ${fmtD(ev.data)}\nLocal: ${ev.local||"-"}\nTaxa de contribuição: ${ev.taxa?fmtR(ev.taxa):"-"}\n\nConvocados (${ev.convocados.length})\n${list.join("\n")}`;waOpen(WA_ADMIN,msg);};
   const resetProfF=()=>setProfF({nome:"",user:"",pass:"",projeto:"",categoria:"",financeiro:false,estoqueEdit:false});
   const openEditProf=pf=>{setProfF({...pf,financeiro:!!pf.financeiro,estoqueEdit:!!pf.estoqueEdit});setShowProf(true);};
   const addProf=async()=>{if(!profF.nome||!profF.user||!profF.pass)return;const item={...profF,financeiro:!!profF.financeiro,estoqueEdit:!!profF.estoqueEdit,id:profF.id||"p"+Date.now()};const nl=profF.id?profs.map(p=>p.id===profF.id?item:p):[...profs,item];setProfs(nl);await sPf(nl);setShowProf(false);resetProfF();t2(profF.id?"✅ Professor atualizado!":"✅ Professor adicionado!");};
@@ -994,14 +997,14 @@ export default function App() {
   // ── Campeonatos ───────────────────────────────────────
   const renderCamps=()=>(
     <div style={{maxWidth:1000,margin:"24px auto",padding:"0 16px"}}>
-      {(user&&(user.role==="admin"||user.role==="professor"))&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn color={G} onClick={()=>setShowCamp(true)}>+ Novo Campeonato</Btn></div>}
+      {user&&user.role==="admin"&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn color={G} onClick={()=>setShowCamp(true)}>+ Novo Campeonato</Btn></div>}
       {camps.length===0?<div style={{background:"white",borderRadius:14,padding:48,textAlign:"center",boxShadow:"0 2px 8px #0001"}}><p style={{fontSize:40,margin:0}}>🏆</p><p style={{color:"#888",fontWeight:600}}>Nenhum campeonato</p></div>
         :<div style={{display:"grid",gap:12}}>{camps.map(c=><div key={c.id} style={{background:"white",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 8px #0001"}}><div style={{background:N,padding:"13px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}><span style={{fontSize:22}}>🏆</span><div style={{flex:1}}><p style={{color:"white",fontWeight:800,fontSize:15,margin:0}}>{c.nome}</p><p style={{color:G,fontSize:12,margin:0}}>{fmtD(c.data)}{c.cat?" · "+c.cat:""}{c.proj?" · "+c.proj:""}</p></div><Badge text={"📋 "+c.inscritos.length} color={G}/><Badge text={"⚽ "+(c.eventos||[]).length+" eventos"} color="#86EFAC"/><Btn small color={G} onClick={()=>setSelCamp(c)}>Gerenciar</Btn>{user&&user.role==="admin"&&<Btn small color={R} outline onClick={()=>delCamp(c.id)}>🗑</Btn>}</div></div>)}</div>}
       {showCamp&&<Modal title="➕ Novo Campeonato" onClose={()=>setShowCamp(false)}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}><Inp label="Nome" req value={campF.nome} onChange={v=>setCampF(f=>({...f,nome:v}))} full/><Inp label="Data" type="date" value={campF.data} onChange={v=>setCampF(f=>({...f,data:v}))}/><Sel label="Categoria máx." value={campF.cat} onChange={v=>setCampF(f=>({...f,cat:v}))} opts={CATS}/><Sel label="Projeto" value={campF.proj} onChange={v=>setCampF(f=>({...f,proj:v}))} opts={PROJS}/></div><div style={{display:"flex",gap:10}}><Btn color={N} disabled={!campF.nome} onClick={addCamp}>✅ Criar</Btn><Btn outline color="#888" onClick={()=>setShowCamp(false)}>Cancelar</Btn></div></Modal>}
       {selCamp&&(()=>{const c=selCamp;const elig=eligibleForCamp(c).sort(sortName);return(
         <Modal title={"🏆 "+c.nome} onClose={()=>setSelCamp(null)} wide>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-            <div>
+          <div style={{display:"grid",gridTemplateColumns:user?.role==="admin"?"1fr 1fr":"1fr",gap:16}}>
+            {user?.role==="admin"&&<div>
               <p style={{fontWeight:800,fontSize:13,color:N,margin:"0 0 8px",textTransform:"uppercase",letterSpacing:1}}>📋 Inscrições</p>
               <div style={{maxHeight:300,overflowY:"auto",display:"flex",flexDirection:"column",gap:5}}>
                 {elig.map(a=>{const pgIns=pagamentos.find(pg=>pg.aId===a.id&&pg.tipo==="Taxa de Inscrição"&&(pg.status==="Pago"||pg.status==="Isento"));const ok=!!pgIns;const insc=c.inscritos.includes(a.id);const bg=insc?"#F0FFF4":ok?"white":"#FFF9F9";const bd=insc?"#86EFAC":ok?"#E2E8F0":R+"33";return(
@@ -1012,21 +1015,21 @@ export default function App() {
                   </div>
                 );})}
               </div>
-            </div>
+            </div>}
             <div>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><p style={{fontWeight:800,fontSize:13,color:N,margin:0,textTransform:"uppercase",letterSpacing:1}}>⚽ Partidas</p><Btn small color={G} onClick={()=>setShowEv(true)}>+ Evento</Btn></div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><p style={{fontWeight:800,fontSize:13,color:N,margin:0,textTransform:"uppercase",letterSpacing:1}}>⚽ Partidas</p>{user?.role==="admin"&&<Btn small color={G} onClick={()=>setShowEv(true)}>+ Evento</Btn>}</div>
               {(c.eventos||[]).length===0?<p style={{color:"#888",fontSize:13}}>Nenhum evento.</p>
                 :<div style={{display:"flex",flexDirection:"column",gap:10,maxHeight:340,overflowY:"auto"}}>{c.eventos.map(ev=>(
                   <div key={ev.id} style={{background:"#F8FAFC",borderRadius:10,padding:12,border:"1px solid #E2E8F0"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}><div><p style={{fontWeight:800,fontSize:14,color:N,margin:0}}>{ev.nome}</p><p style={{fontSize:12,color:"#64748B",margin:0}}>{fmtD(ev.data)}{ev.local?" · "+ev.local:""}{ev.taxa?" · "+fmtR(ev.taxa):""}</p>{ev.taxa&&(()=>{const fs=campFinanceSummary(c,ev);return <p style={{fontSize:11,color:"#64748B",margin:"3px 0 0",fontWeight:700}}>Financeiro: {fs.pend} pend. · {fs.pago} pago(s) · {fs.isento} isento(s){fs.sem?" · "+fs.sem+" sem lançamento":""}</p>;})()}</div><div style={{display:"flex",gap:5}}>{ev.taxa&&<Btn small color={OR} onClick={()=>syncCampFinance(c,ev)}>💰</Btn>}<Btn small color={GR} onClick={()=>expConv(c,ev)}>📲</Btn><button onClick={()=>delEv(c.id,ev.id)} style={{background:"none",border:"none",color:R,cursor:"pointer",fontSize:14}}>🗑</button></div></div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}><div><p style={{fontWeight:800,fontSize:14,color:N,margin:0}}>{ev.nome}</p><p style={{fontSize:12,color:"#64748B",margin:0}}>{fmtD(ev.data)}{ev.local?" · "+ev.local:""}{ev.taxa?" · "+fmtR(ev.taxa):""}</p>{ev.taxa&&(()=>{const fs=campFinanceSummary(c,ev);return <p style={{fontSize:11,color:"#64748B",margin:"3px 0 0",fontWeight:700}}>Financeiro: {fs.pend} pend. · {fs.pago} pago(s) · {fs.isento} isento(s){fs.sem?" · "+fs.sem+" sem lançamento":""}</p>;})()}</div><div style={{display:"flex",gap:5}}>{user?.role==="admin"&&ev.taxa&&<Btn small color={OR} onClick={()=>syncCampFinance(c,ev)}>💰</Btn>}<Btn small color={GR} onClick={()=>expConv(c,ev)}>📲</Btn>{user?.role==="admin"&&<button onClick={()=>delEv(c.id,ev.id)} style={{background:"none",border:"none",color:R,cursor:"pointer",fontSize:14}}>🗑</button>}</div></div>
                     <p style={{fontSize:11,fontWeight:700,color:"#64748B",margin:"0 0 5px",textTransform:"uppercase"}}>Convocados ({ev.convocados.length})</p>
                     <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>{ev.convocados.map(id=>{const a=athletes.find(x=>x.id===id);return a?<span key={id} style={{background:BL+"15",color:BL,border:`1px solid ${BL}44`,borderRadius:6,padding:"2px 7px",fontSize:11,fontWeight:700}}>{a.nomeAtleta}{a.posicao?" · "+a.posicao:""}</span>:null;})}</div>
-                    <details><summary style={{fontSize:12,cursor:"pointer",color:"#64748B",fontWeight:600}}>Selecionar atletas e revisar financeiro da competição</summary>
+                    <details><summary style={{fontSize:12,cursor:"pointer",color:"#64748B",fontWeight:600}}>Selecionar atletas convocados</summary>
                       <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4,maxHeight:190,overflowY:"auto"}}>{(()=>{const ids=[...new Set([...c.inscritos,...campFinanceIds(c,ev),...elig.filter(a=>hasTaxaGeralOk(a.id)).map(a=>a.id)])];return ids.map(id=>{const a=athletes.find(x=>x.id===id);if(!a)return null;const conv=ev.convocados.includes(id);const pgEv=findCampPgto(c,ev,id);const st=pgEv?pgEv.status:"Sem lançamento";const stColor=st==="Pago"?"#059669":st==="Isento"?OR:R;return(
                         <div key={id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 8px",borderRadius:7,background:conv?"#EFF6FF":"white",border:`1px solid ${conv?"#93C5FD":"#E2E8F0"}`}}>
                           <span style={{flex:1,fontSize:12,fontWeight:600}}>{a.nomeAtleta} <span style={{fontSize:11,color:"#94A3B8"}}>({a.categoria}{a.posicao?" · "+a.posicao:""} · {c.inscritos.includes(id)?"Inscrito":taxaLabel(id)})</span></span>
                           {ev.taxa&&<span style={{fontSize:10,color:stColor,fontWeight:800,whiteSpace:"nowrap"}}>{st}</span>}
-                          {ev.taxa&&<div style={{display:"flex",gap:3}}><button onClick={()=>setCampPgtoStatus(c,ev,id,"Pago")} style={{background:"#DCFCE7",color:"#166534",border:"1px solid #86EFAC",borderRadius:5,padding:"2px 5px",cursor:"pointer",fontWeight:800,fontSize:10}}>Pago</button><button onClick={()=>setCampPgtoStatus(c,ev,id,"Isento")} style={{background:"#FFF7ED",color:OR,border:"1px solid #FDBA74",borderRadius:5,padding:"2px 5px",cursor:"pointer",fontWeight:800,fontSize:10}}>Isento</button></div>}
+                          {user?.role==="admin"&&ev.taxa&&<div style={{display:"flex",gap:3}}><button onClick={()=>setCampPgtoStatus(c,ev,id,"Pago")} style={{background:"#DCFCE7",color:"#166534",border:"1px solid #86EFAC",borderRadius:5,padding:"2px 5px",cursor:"pointer",fontWeight:800,fontSize:10}}>Pago</button><button onClick={()=>setCampPgtoStatus(c,ev,id,"Isento")} style={{background:"#FFF7ED",color:OR,border:"1px solid #FDBA74",borderRadius:5,padding:"2px 5px",cursor:"pointer",fontWeight:800,fontSize:10}}>Isento</button></div>}
                           <button onClick={()=>togConv(c,ev.id,id)} style={{background:conv?OR:BL,color:"white",border:"none",borderRadius:5,padding:"3px 8px",cursor:"pointer",fontWeight:700,fontSize:11}}>{conv?"Rem.":"Conv."}</button>
                         </div>
                       );});})()}</div>
@@ -1042,8 +1045,10 @@ export default function App() {
   );
 
   const canEditEstoque=()=>user&&(user.role==='admin'||(user.role==='professor'&&user.estoqueEdit));
-  const resetItemF=()=>setItemF({nome:'',categoria:'Item de Venda',preco:'',tamanhos:[],descricao:'',foto:null,qtdInput:{}});
-  const openEditItem=item=>{if(!canEditEstoque())return;setItemF({...item,qtdInput:{...(item.qtd||{})}});setShowAddItem(true);};
+  const resetItemF=()=>{setItemF({nome:'',categoria:'Item de Venda',preco:'',tamanhos:[],descricao:'',foto:null,qtdInput:{}});setItemSizeInput("");};
+  const openEditItem=item=>{if(!canEditEstoque())return;setItemSizeInput("");setItemF({...item,qtdInput:{...(item.qtd||{})}});setShowAddItem(true);};
+  const toggleItemSize=t=>setItemF(f=>({...f,tamanhos:f.tamanhos.includes(t)?f.tamanhos.filter(x=>x!==t):[...f.tamanhos,t]}));
+  const addItemSize=()=>{const t=String(itemSizeInput||"").trim();if(!t)return;setItemF(f=>f.tamanhos.some(x=>normTxt(x)===normTxt(t))?f:{...f,tamanhos:[...f.tamanhos,t],qtdInput:{...f.qtdInput,[t]:f.qtdInput[t]||""}});setItemSizeInput("");};
   const saveItem = async () => {
     if(!canEditEstoque()||!itemF.nome||!itemF.categoria) return;
     const qtd={};
@@ -1081,8 +1086,9 @@ export default function App() {
       return {...i,qtd:nq};
     });
     setItens(itemList);await sI(itemList);
-    waOpen(WA_ADMIN,msg);
-    setPedidoItem(null);setPedidoF({tamanho:'',qtd:'1'});
+    const phone=ath&&onlyDigits(ath.telResp||ath.telAtleta);
+    waOpen(phone?"55"+phone:WA_ADMIN,msg);
+    setPedidoItem(null);setPedidoF({tamanho:'',qtd:'1',aId:''});
     if(!ath||item.preco===0) t2('✅ Pedido enviado via WhatsApp!');
   };
 
@@ -1148,7 +1154,7 @@ export default function App() {
                       </div>
                       <div style={{display:'flex',gap:6}}>
                         {isVenda&&(user?.role==='atleta'||canManageEstoque)&&(
-                          <Btn small color={BL} onClick={()=>{setPedidoItem(item);setPedidoF({tamanho:item.tamanhos[0]||'',qtd:'1'});}} xst={{flex:1}}>
+                          <Btn small color={BL} onClick={()=>{setPedidoItem(item);setPedidoF({tamanho:item.tamanhos[0]||'',qtd:'1',aId:''});}} xst={{flex:1}}>
                             {user&&user.role==='atleta'?'🛒 Solicitar':'🛒 Registrar Venda'}
                           </Btn>
                         )}
@@ -1177,10 +1183,14 @@ export default function App() {
               <div style={{gridColumn:'1/-1'}}>
                 <label style={{fontSize:11,fontWeight:700,color:'#555',textTransform:'uppercase',display:'block',marginBottom:6}}>Tamanhos Disponíveis</label>
                 <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
-                  {TAMANHOS.map(t=>{
+                  {[...new Set([...TAMANHOS,...itemF.tamanhos])].map(t=>{
                     const sel=itemF.tamanhos.includes(t);
-                    return <button key={t} onClick={()=>setItemF(f=>({...f,tamanhos:sel?f.tamanhos.filter(x=>x!==t):[...f.tamanhos,t]}))} style={{background:sel?N:'white',color:sel?G:N,border:`1.5px solid ${N}`,borderRadius:7,padding:'5px 12px',cursor:'pointer',fontWeight:700,fontSize:12}}>{t}</button>;
+                    return <button key={t} onClick={()=>toggleItemSize(t)} style={{background:sel?N:'white',color:sel?G:N,border:`1.5px solid ${N}`,borderRadius:7,padding:'5px 12px',cursor:'pointer',fontWeight:700,fontSize:12}}>{t}</button>;
                   })}
+                </div>
+                <div style={{display:'flex',gap:6,marginBottom:10}}>
+                  <input value={itemSizeInput} onChange={e=>setItemSizeInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addItemSize();}} placeholder="Adicionar tamanho" style={{border:'1.5px solid #ddd',borderRadius:7,padding:'7px 10px',fontSize:13,outline:'none',flex:1,minWidth:160}}/>
+                  <button onClick={addItemSize} style={{background:N,color:G,border:'none',borderRadius:7,padding:'7px 12px',cursor:'pointer',fontWeight:800,fontSize:12}}>+ Adicionar</button>
                 </div>
                 {itemF.tamanhos.length>0&&(
                   <div>
@@ -1209,7 +1219,8 @@ export default function App() {
 
         {pedidoItem&&(()=>{
           const item=pedidoItem;
-          const ath=user&&user.id&&user.id!=='demo'?athletes.find(x=>x.id===user.id):null;
+          const ath=user&&user.role==='atleta'&&user.id&&user.id!=='demo'?athletes.find(x=>x.id===user.id):athletes.find(x=>Number(x.id)===Number(pedidoF.aId));
+          const precisaAtleta=canManageEstoque&&user?.role!=='atleta';
           const tamSel=pedidoF.tamanho;
           const qtdDisp=item.qtd[tamSel]||0;
           return(
@@ -1230,6 +1241,13 @@ export default function App() {
                   {tamSel&&<p style={{fontSize:11,color:'#64748B',margin:'6px 0 0'}}>Disponível: {qtdDisp} un.</p>}
                 </div>
                 <Inp label="Quantidade" type="number" value={pedidoF.qtd} onChange={v=>setPedidoF(f=>({...f,qtd:v}))}/>
+                {precisaAtleta&&<div style={{gridColumn:'1/-1'}}>
+                  <label style={{fontSize:11,fontWeight:700,color:'#555',textTransform:'uppercase',display:'block',marginBottom:6}}>Atleta comprador</label>
+                  <select value={pedidoF.aId||''} onChange={e=>setPedidoF(f=>({...f,aId:e.target.value}))} style={{border:'1.5px solid #ddd',borderRadius:8,padding:'8px 11px',fontSize:14,outline:'none',background:'white',width:'100%'}}>
+                    <option value="">Selecione o atleta...</option>
+                    {athletes.slice().sort(sortName).map(a=><option key={a.id} value={a.id}>{a.nomeAtleta}{a.categoria?' - '+a.categoria:''}{a.projeto?' - '+a.projeto:''}</option>)}
+                  </select>
+                </div>}
               </div>
               {item.preco>0&&tamSel&&(
                 <div style={{background:'#F0FFF4',borderRadius:10,padding:12,border:'1px solid #86EFAC',marginBottom:12}}>
@@ -1241,7 +1259,7 @@ export default function App() {
                 ℹ️ Ao clicar em "Enviar Pedido", o WhatsApp abrirá com as informações. Realize o pagamento via PIX e envie o comprovante.
               </div>
               <div style={{display:'flex',gap:10}}>
-                <Btn color={GR} disabled={!tamSel||!pedidoF.qtd||Number(pedidoF.qtd)<1} onClick={()=>sendPedidoWA(item,ath,tamSel,pedidoF.qtd)} xst={{flex:1}}>📲 Enviar Pedido via WhatsApp</Btn>
+                <Btn color={GR} disabled={!tamSel||!pedidoF.qtd||Number(pedidoF.qtd)<1||(precisaAtleta&&!ath)} onClick={()=>sendPedidoWA(item,ath,tamSel,pedidoF.qtd)} xst={{flex:1}}>📲 Enviar Pedido via WhatsApp</Btn>
                 <Btn outline color="#888" onClick={()=>setPedidoItem(null)}>Cancelar</Btn>
               </div>
             </Modal>
@@ -1545,7 +1563,7 @@ export default function App() {
     </div>
   );
 
-  const ADMIN_TABS=[{id:"athletes",l:"📋 Atletas"},{id:"form",l:"➕ Cadastrar"},{id:"presenca",l:"📅 Presença"},{id:"campeonatos",l:"🏆 Campeonatos"},{id:"financeiro",l:"💰 Financeiro"},{id:"estoque",l:"🛍️ Estoque"},{id:"professores",l:"👨‍🏫 Professores"}];
+  const ADMIN_TABS=[{id:"athletes",l:"📋 Atletas"},{id:"form",l:"➕ Cadastrar"},{id:"presenca",l:"📅 Presença"},{id:"campeonatos",l:"🏆 Campeonatos"},{id:"financeiro",l:"💰 Financeiro"},{id:"estoque",l:"🛍️ Estoque"},{id:"professores",l:"🧢 Professores"}];
   const PROF_TABS=[{id:"athletes",l:"📋 Turma"},{id:"form",l:"➕ Cadastrar"},{id:"presenca",l:"📅 Presença"},{id:"campeonatos",l:"🏆 Campeonatos"},...(user.financeiro?[{id:"financeiro",l:"💰 Financeiro"}]:[]),{id:"estoque",l:"🛍️ Estoque"}];
   const PUBLICO_TABS=[{id:"form",l:"📝 Cadastro"}];
   const ATLETA_TABS=[{id:"portal",l:"⚽ Meu Perfil"},{id:"estoque",l:"🛍️ Loja"}];
@@ -1775,7 +1793,7 @@ function StaffLogin({onLogin, profs, athletes}) {
       <div style={{background:"#F8FAFC",borderRadius:10,padding:10,fontSize:11,color:"#64748B",lineHeight:1.8}}>
         <strong style={{color:N}}>Como acessar:</strong><br/>
         👤 Atleta: CPF (sem pontos) + data nasc. ex: <code style={{background:"#EEE",padding:"1px 4px",borderRadius:3}}>01012010</code><br/>
-        👨‍🏫 Professor: login + senha cadastrados
+        🧢 Professor: login + senha cadastrados
       </div>
     </div>
   );
