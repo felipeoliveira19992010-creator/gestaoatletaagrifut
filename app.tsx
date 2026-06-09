@@ -630,6 +630,13 @@ export default function App() {
     setNewAthToken(token);
     setForm({...BLANK});setStep(0);
   };
+  const canQuickSubmit=()=>{
+    if(!user||user.role!=="admin") return false;
+    const a=Number(ageOf(form.dataNasc));
+    const cpfL=onlyDigits(form.cpfAtleta).length;
+    return !!form.nomeAtleta&&!!form.dataNasc&&(cpfL===0||cpfL===11)&&a>=6&&a<=18&&!hasDuplicateBlock(form);
+  };
+  const quickSubmit=async()=>{if(!canQuickSubmit()){t2("⚠️ Informe nome, data válida e confira CPF/RG duplicado.");return;}await submit();};
 
   const saveEdit=async()=>{const clean=normalizeCadastro(editAth);if(hasDuplicateBlock(clean,editAth.id)){t2("⚠️ CPF ou RG já cadastrado em outro atleta.");return;}const nl=athletes.map(a=>a.id===editAth.id?{...clean,age:ageOf(clean.dataNasc)}:a);setAthletes(nl);await sA(nl);setEditAth(null);t2("✅ Atualizado!");};
   const doMig=async()=>{const nl=athletes.map(a=>a.id===migAth.id?{...a,categoria:migC||a.categoria,projeto:migP||a.projeto}:a);setAthletes(nl);await sA(nl);setMigAth(null);t2("✅ Migrado!");};
@@ -746,6 +753,7 @@ export default function App() {
           <input type="file" accept="image/*" style={{fontSize:12}} onChange={async e=>{if(e.target.files[0]){const d=await readB64(e.target.files[0]);setForm(f=>({...f,foto:d.data}));}}}/>
           {form.foto&&<img src={form.foto} alt="" style={{width:74,height:74,objectFit:"cover",borderRadius:10,marginTop:8,border:`3px solid ${G}`}}/>}
         </div>
+        {user?.role==="admin"&&<div style={{gridColumn:"1/-1",display:"flex",justifyContent:"flex-end",paddingTop:4}}><Btn color={GR} disabled={!canQuickSubmit()} onClick={quickSubmit}>⚡ Cadastro rápido</Btn></div>}
       </div>
     );
     if(step===1) return (
