@@ -512,6 +512,7 @@ export default function App() {
   const [newAthToken,setNewAthToken]=useState(""); // shown after registration
   const [projV,setProjV]=useState(null);
   const [srch,setSrch]=useState("");
+  const [fAProj,setFAProj]=useState("all");const[fACat,setFACat]=useState("all");const[fAAge,setFAAge]=useState("all");const[fAPend,setFAPend]=useState("all");const[fADocs,setFADocs]=useState("all");
   const [selAth,setSelAth]=useState(null);
   const [editAth,setEditAth]=useState(null);
   const [migAth,setMigAth]=useState(null);
@@ -630,6 +631,7 @@ export default function App() {
   const submit=async()=>{
     const clean=normalizeCadastro({...form,categoria:form.categoria||categoryByBirth(form.dataNasc)});
     if(hasDuplicateBlock(clean)){setStep(0);t2("⚠️ CPF ou RG já cadastrado. Confira o atleta existente.");return;}
+    if(!clean.projeto&&!confirm("Finalizar cadastro sem selecionar projeto? O atleta ficará em Sem projeto até ser editado.")){t2("Cadastro não finalizado.");return;}
     const token=genToken();
     const a={...clean,id:Date.now(),token,age:ageOf(clean.dataNasc),createdAt:new Date().toISOString()};
     const nl=[...athletes,a];setAthletes(nl);await sA(nl);
@@ -748,6 +750,7 @@ export default function App() {
         <Sel label="Posição" value={form.posicao} onChange={v=>sF("posicao",v)} opts={POSICOES}/>
         <Sel label="Categoria" value={form.categoria} onChange={v=>sF("categoria",v)} opts={CATS}/>
         <Sel label="Projeto" value={form.projeto} onChange={v=>sF("projeto",v)} opts={PROJS}/>
+        {!form.projeto&&<p style={{gridColumn:"1/-1",color:OR,fontSize:12,fontWeight:700,margin:"-4px 0 0"}}>⚠️ Nenhum projeto selecionado. Ao finalizar, o sistema vai pedir confirmação.</p>}
         <Inp label="Escola" value={form.escola} onChange={v=>sF("escola",v)}/>
         <Inp label="Série" value={form.serie} onChange={v=>sF("serie",v)}/>
         <Inp label="Endereço" value={form.endereco} onChange={v=>sF("endereco",v)} full/>
@@ -847,7 +850,36 @@ export default function App() {
 
   // ── Athletes ──────────────────────────────────────────
   const renderAthletes=()=>{
-    const listAll=filterFn=>athletes.filter(filterFn).filter(a=>!normTxt(srch)||normTxt(a.nomeAtleta).includes(normTxt(srch))||normTxt(a.nomeResp).includes(normTxt(srch)));
+    const hasPend=a=>pagamentos.some(pg=>Number(pg.aId)===Number(a.id)&&pg.status==="Pendente");
+    const docQty=a=>[a.rgAtleta,a.rgResp,a.comprResid].filter(Boolean).length;
+    const searchOk=a=>{const q=normTxt(srch);if(!q)return true;return [a.nomeAtleta,a.nomeResp,a.cpfAtleta,a.rgAtletaNum,a.telAtleta,a.telResp,a.categoria,a.projeto,a.posicao,String(ageOf(a.dataNasc)||""),fmtD(a.dataNasc)].some(v=>normTxt(v).includes(q));};
+    const filterOk=a=>{
+      if(fAProj==="sem"&&a.projeto) return false;
+      if(fAProj!=="all"&&fAProj!=="sem"&&a.projeto!==fAProj) return false;
+      if(fACat!=="all"&&a.categoria!==fACat) return false;
+      if(fAAge!=="all"&&Number(ageOf(a.dataNasc))!==Number(fAAge)) return false;
+      if(fAPend==="com"&&!hasPend(a)) return false;
+      if(fAPend==="sem"&&hasPend(a)) return false;
+      if(fADocs==="pend"&&docQty(a)>=3) return false;
+      if(fADocs==="ok"&&docQty(a)<3) return false;
+      return true;
+    };
+    const baseList=filterFn=>athletes.filter(filterFn).filter(searchOk).sort(sortName);
+    const listAll=filterFn=>baseList(filterFn).filter(filterOk);
+    const hasAthFilters=[fAProj,fACat,fAAge,fAPend,fADocs].some(v=>v!=="all");
+    const clearAthFilters=()=>{setFAProj("all");setFACat("all");setFAAge("all");setFAPend("all");setFADocs("all");};
+    const compactSel=(label,value,onChange,opts)=><label style={{display:"flex",flexDirection:"column",gap:3,fontSize:11,fontWeight:800,color:"#64748B",textTransform:"uppercase"}}>{label}<select value={value} onChange={e=>onChange(e.target.value)} style={{border:"1.5px solid #CBD5E1",borderRadius:8,padding:"6px 9px",fontSize:12,outline:"none",background:"white",minWidth:118,textTransform:"none",fontWeight:700,color:N}}>{opts.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select></label>;
+    const filterPanel=(
+      <div style={{display:"flex",gap:8,alignItems:"flex-end",marginBottom:12,flexWrap:"wrap",background:"#F8FAFC",borderRadius:12,padding:"10px 12px",border:"1px solid #E2E8F0"}}>
+        <span style={{fontSize:12,fontWeight:900,color:N,textTransform:"uppercase",letterSpacing:1,alignSelf:"center"}}>Filtros</span>
+        {compactSel("Projeto",fAProj,setFAProj,[{v:"all",l:"Todos"},...PROJS.map(p=>({v:p,l:p})),{v:"sem",l:"Sem projeto"}])}
+        {compactSel("Categoria",fACat,setFACat,[{v:"all",l:"Todas"},...CATS.map(c=>({v:c,l:c}))])}
+        {compactSel("Idade",fAAge,setFAAge,[{v:"all",l:"Todas"},...Array.from({length:13},(_,i)=>({v:String(i+6),l:String(i+6)+" anos"}))])}
+        {compactSel("Financeiro",fAPend,setFAPend,[{v:"all",l:"Todos"},{v:"com",l:"Com pendências"},{v:"sem",l:"Sem pendências"}])}
+        {compactSel("Documentos",fADocs,setFADocs,[{v:"all",l:"Todos"},{v:"pend",l:"Pendentes"},{v:"ok",l:"Completos"}])}
+        {hasAthFilters&&<Btn small outline color="#64748B" onClick={clearAthFilters}>Limpar filtros</Btn>}
+      </div>
+    );
     const searchBar=(extra=null)=>(
       <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:12,flexWrap:"wrap",background:"white",borderRadius:12,padding:"10px 14px",boxShadow:"0 2px 8px #0001"}}>
         <Btn small outline color={N} onClick={()=>{setProjV(null);setSrch("");}}>← Projetos</Btn>
@@ -860,11 +892,13 @@ export default function App() {
       :<div style={{display:"grid",gap:8}}>{list.map(a=><AthCard key={a.id} a={a} pagamentos={pagamentos} onSelect={setSelAth} onWA={doWA} onMig={doMigOpen} canMig={canMig}/>)}</div>;
     const bdays=athletes.filter(isBirthdayToday).sort(sortName);
 
-    if(projV==="all") return <div style={{maxWidth:1100,margin:"24px auto",padding:"0 16px"}}>{searchBar(<><span style={{fontWeight:800,color:N,fontSize:15}}>Todos</span><Badge text={athletes.length+" atletas"} color={N}/></>)}{athList(listAll(()=>true))}</div>;
+    if(projV==="all"){const list=listAll(()=>true);return <div style={{maxWidth:1100,margin:"24px auto",padding:"0 16px"}}>{searchBar(<><span style={{fontWeight:800,color:N,fontSize:15}}>Todos</span><Badge text={list.length+"/"+athletes.length+" atletas"} color={N}/></>)}{filterPanel}{athList(list)}</div>;}
+    if(projV==="semProjeto"){const list=listAll(a=>!a.projeto);return <div style={{maxWidth:1100,margin:"24px auto",padding:"0 16px"}}>{searchBar(<><span style={{fontWeight:800,color:"#64748B",fontSize:15}}>Sem projeto</span><Badge text={list.length+" atleta(s)"} color="#64748B"/></>)}{filterPanel}{athList(list)}</div>;}
     if(projV&&projV!=="all"){
       const {p,gi}=projV;const grps=PGROUPS[p]||[];const activeCats=gi!==null?grps[gi].cats:grps.flatMap(g=>g.cats);const projColor=PC[p]||"#888";
-      return (<div style={{maxWidth:1100,margin:"24px auto",padding:"0 16px"}}>{searchBar(<><span style={{fontWeight:800,color:projColor,fontSize:15}}>{p}</span>{grps.map((g,i)=><button key={i} onClick={()=>setProjV({p,gi:gi===i?null:i})} style={{background:gi===i?projColor:projColor+"18",color:gi===i?"white":projColor,border:`1.5px solid ${projColor}55`,borderRadius:7,padding:"4px 10px",cursor:"pointer",fontWeight:700,fontSize:11}}>{g.label}</button>)}</>)}{athList(listAll(a=>a.projeto===p&&activeCats.includes(a.categoria)))}</div>);
+      return (<div style={{maxWidth:1100,margin:"24px auto",padding:"0 16px"}}>{searchBar(<><span style={{fontWeight:800,color:projColor,fontSize:15}}>{p}</span>{grps.map((g,i)=><button key={i} onClick={()=>setProjV({p,gi:gi===i?null:i})} style={{background:gi===i?projColor:projColor+"18",color:gi===i?"white":projColor,border:`1.5px solid ${projColor}55`,borderRadius:7,padding:"4px 10px",cursor:"pointer",fontWeight:700,fontSize:11}}>{g.label}</button>)}</>)}{athList(baseList(a=>a.projeto===p&&activeCats.includes(a.categoria)))}</div>);
     }
+    const homeList=listAll(()=>true);
     return (
       <div style={{maxWidth:1100,margin:"24px auto",padding:"0 16px"}}>
         <div style={{background:"white",borderRadius:12,padding:"10px 14px",boxShadow:"0 2px 8px #0001",marginBottom:16,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
@@ -872,7 +906,7 @@ export default function App() {
           <input value={srch} onChange={e=>setSrch(e.target.value)} placeholder="Digite o nome do atleta ou responsável" style={{flex:1,minWidth:240,border:"1.5px solid #ddd",borderRadius:8,padding:"8px 11px",fontSize:14,outline:"none"}}/>
           {srch&&<button onClick={()=>setSrch("")} style={{background:"#F1F5F9",color:"#64748B",border:"1px solid #CBD5E1",borderRadius:7,padding:"6px 10px",cursor:"pointer",fontWeight:700,fontSize:12}}>Limpar</button>}
         </div>
-        {srch&&<div style={{marginBottom:18}}>{athList(listAll(()=>true))}</div>}
+        {(srch||hasAthFilters)&&<div style={{marginBottom:18}}>{filterPanel}{athList(homeList)}</div>}
         {bdays.length>0&&(
           <div style={{background:"white",borderRadius:12,padding:14,boxShadow:"0 2px 8px #0001",marginBottom:16,borderLeft:`4px solid ${G}`}}>
             <p style={{margin:"0 0 8px",fontWeight:800,fontSize:14,color:N}}>🎂 Aniversariantes do Dia</p>
@@ -883,7 +917,7 @@ export default function App() {
         )}
         <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
           <button onClick={()=>{setProjV("all");setSrch("");}} style={{background:N,color:G,border:"none",borderRadius:10,padding:"10px 20px",fontWeight:800,fontSize:14,cursor:"pointer"}}>👥 Todos ({athletes.length})</button>
-          {athletes.filter(a=>!a.projeto).length>0&&<button onClick={()=>setProjV("all")} style={{background:"#F1F5F9",color:"#64748B",border:"2px solid #E2E8F0",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer"}}>⚠️ Sem projeto: {athletes.filter(a=>!a.projeto).length}</button>}
+          {athletes.filter(a=>!a.projeto).length>0&&<button onClick={()=>{setFAProj("all");setProjV("semProjeto");}} style={{background:"#F1F5F9",color:"#64748B",border:"2px solid #E2E8F0",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer"}}>⚠️ Sem projeto: {athletes.filter(a=>!a.projeto).length}</button>}
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:20}}>
           {PROJS.map(p=>{
