@@ -518,7 +518,7 @@ export default function App() {
   const [migAth,setMigAth]=useState(null);
   const [migC,setMigC]=useState("");const[migP,setMigP]=useState("");
   const [presDate,setPresDate]=useState(tod());const[presProj,setPresProj]=useState("");const[presGi,setPresGi]=useState(null);const[presCat,setPresCat]=useState("");const[presExpPer,setPresExpPer]=useState("dia");
-  const [showPgto,setShowPgto]=useState(false);const[pgtoF,setPgtoF]=useState({tipo:"",desc:"",valor:"",status:"Pendente",data:tod(),aId:"",comp:null});
+  const [showPgto,setShowPgto]=useState(false);const[pgtoF,setPgtoF]=useState({tipo:"",desc:"",valor:"",status:"Pendente",data:tod(),aId:"",comp:null,itemId:"",tamanho:"",qtd:"1"});
   const [editPgto,setEditPgto]=useState(null);
   const [pgtoAthInput,setPgtoAthInput]=useState("");
   const [fPSt,setFPSt]=useState("all");const[fPTp,setFPTp]=useState("all");const[fPCats,setFPCats]=useState([]);const[fPAth,setFPAth]=useState("");
@@ -533,7 +533,8 @@ export default function App() {
   const [itemF,setItemF] = useState({nome:'',categoria:'Item de Venda',preco:'',tamanhos:[],descricao:'',foto:null,qtdInput:{}});
   const [fEstCat,setFEstCat] = useState('all');
   const [pedidoItem,setPedidoItem] = useState(null);
-  const [pedidoF,setPedidoF] = useState({tamanho:'',qtd:'1',aId:''});
+  const [pedidoF,setPedidoF] = useState({tamanho:'',qtd:'1',aId:'',status:'Pendente'});
+  const [pedidoAthInput,setPedidoAthInput]=useState("");
   const [itemSizeInput,setItemSizeInput]=useState("");
   const [sigTarget,setSigTarget] = useState(null);
   const [pdfTarget,setPdfTarget] = useState(null); // {atleta, sig}
@@ -656,7 +657,14 @@ export default function App() {
   const pgtoAthLabel=a=>a?`${a.nomeAtleta}${a.categoria?" ("+a.categoria+")":""}${a.projeto?" · "+a.projeto:""}`:"";
   const findPgtoAth=v=>{const q=normTxt(v);return athletes.find(a=>normTxt(pgtoAthLabel(a))===q)||athletes.find(a=>normTxt(a.nomeAtleta)===q)||null;};
   const setPgtoAth=v=>{setPgtoAthInput(v);const a=findPgtoAth(v);setPgtoF(f=>({...f,aId:a?Number(a.id):""}));};
-  const resetPgtoF=()=>{setPgtoF({tipo:"",desc:"",valor:"",status:"Pendente",data:tod(),aId:"",comp:null});setPgtoAthInput("");};
+  const vendaItens=()=>itens.filter(i=>i.categoria==="Item de Venda");
+  const financeTypeOptions=()=>[...PTYPES,...vendaItens().map(i=>i.nome).filter(t=>!PTYPES.includes(t))];
+  const saleDesc=(item,tam,qtd)=>`${item.nome}${tam?" — Tam: "+tam:""} x${qtd||1}`;
+  const saleValue=(item,qtd)=>String(Number(item?.preco||0)*Number(qtd||1));
+  const findSaleItem=v=>vendaItens().find(i=>Number(i.id)===Number(v)||normTxt(i.nome)===normTxt(v));
+  const applyPgtoSale=(item,patch={})=>setPgtoF(f=>{const qtd=patch.qtd??f.qtd??"1";const reqTam=patch.tamanho??f.tamanho;const tamanho=(item.tamanhos||[]).includes(reqTam)?reqTam:(item.tamanhos||[])[0]||"";return{...f,...patch,tipo:item.nome,itemId:item.id,tamanho,qtd,desc:saleDesc(item,tamanho,qtd),valor:saleValue(item,qtd)};});
+  const setPgtoTipo=v=>{const item=findSaleItem(v);if(item){applyPgtoSale(item,{qtd:pgtoF.qtd||"1"});return;}setPgtoF(f=>({...f,tipo:v,itemId:"",tamanho:"",qtd:"1",desc:f.itemId?"":f.desc,valor:f.itemId?"":f.valor}));};
+  const resetPgtoF=()=>{setPgtoF({tipo:"",desc:"",valor:"",status:"Pendente",data:tod(),aId:"",comp:null,itemId:"",tamanho:"",qtd:"1"});setPgtoAthInput("");};
   const createQuickFinanceAth=async()=>{const nome=titleName(pgtoAthInput);if(!nome)return;const exists=athletes.find(a=>normTxt(a.nomeAtleta)===normTxt(nome));if(exists){setPgtoF(f=>({...f,aId:Number(exists.id)}));setPgtoAthInput(pgtoAthLabel(exists));t2("✅ Atleta encontrado e selecionado.");return;}const token=genToken();const ath={...BLANK,id:Date.now(),token,nomeAtleta:nome,age:"",createdAt:new Date().toISOString()};const nl=[...athletes,ath];setAthletes(nl);await sA(nl);setPgtoF(f=>({...f,aId:Number(ath.id)}));setPgtoAthInput(pgtoAthLabel(ath));t2("✅ Cadastro rápido criado para o financeiro.");};
   const addPgto=async()=>{if(!pgtoF.tipo||!pgtoF.aId)return;const txn=pgtoF.comp?genTxn():"";const np={...pgtoF,aId:Number(pgtoF.aId),id:Date.now(),txn};const nl=[...pagamentos,np];setPagamentos(nl);await sP(nl);await addFinHist("Registro criado",np);if(np.comp){const ath=athletes.find(x=>x.id===np.aId);const msg=`📋 *Comprovante*\n🔑 Código: *${txn}*\nAtleta: ${ath?ath.nomeAtleta:"—"}\nTipo: ${np.tipo}\nValor: ${np.valor?fmtR(np.valor):"-"}`;const el=document.createElement("a");el.href=np.comp.data;el.download=np.comp.name;el.click();setTimeout(()=>waOpen(WA_ADMIN,msg),600);}setShowPgto(false);resetPgtoF();t2("✅ Registro adicionado!");};
   const openEditPgto=pg=>{setEditPgto(pg);setPgtoF({...pg});setPgtoAthInput(pgtoAthLabel(athletes.find(a=>Number(a.id)===Number(pg.aId))));setShowPgto(true);};
@@ -1058,25 +1066,14 @@ export default function App() {
 
   const delItem = async id => {if(!canEditEstoque())return;const nl=itens.filter(i=>i.id!==id);setItens(nl);await sI(nl);};
 
-  const sendPedidoWA = async (item,ath,tam,qtd) => {
+  const resetPedidoF=()=>{setPedidoF({tamanho:'',qtd:'1',aId:'',status:'Pendente'});setPedidoAthInput("");};
+  const setPedidoAth=v=>{setPedidoAthInput(v);const a=findPgtoAth(v);setPedidoF(f=>({...f,aId:a?Number(a.id):""}));};
+  const registerStockSale=async(item,ath,tam,qtd,status)=>{
+    if(!ath){t2("⚠️ Selecione o atleta comprador.");return false;}
     const total=item.preco*Number(qtd||1);
-    const msg=`🛍️ *PEDIDO — Agrifut Loja*\n\n`+
-      `📦 Item: *${item.nome}*\n`+
-      `📐 Tamanho: *${tam}*\n`+
-      `🔢 Quantidade: *${qtd}*\n`+
-      `💰 Valor total: *${item.preco>0?fmtR(total):'A confirmar'}*\n\n`+
-      `👤 Atleta: *${ath?ath.nomeAtleta:'—'}*\n`+
-      `📂 Categoria: *${ath?ath.categoria||'—':'—'}*\n`+
-      `📱 Responsável: ${ath?ath.nomeResp:'—'}\n\n`+
-      `💳 *Pagamento via PIX — CNPJ:*\n${CNPJ}\n`+
-      `_Itajaí Esporte Clube_\n\n`+
-      `_Após o pagamento, envie o comprovante para este número._\n\n`+
-      `_Itajaí Agrifut 🟡⚫_`;
-    if(ath&&item.preco>0){
-      const txn=genTxn();
-      const np={id:Date.now(),aId:ath.id,tipo:'Uniforme',desc:`${item.nome} — Tam: ${tam} x${qtd}`,valor:String(total),status:'Pendente',data:tod(),txn,comp:null};
-      const nl=[...pagamentos,np];setPagamentos(nl);await sP(nl);await addFinHist("Pedido de estoque criado",np);
-      t2('✅ Pedido registrado! Código: '+txn);
+    if(item.preco>0){
+      const np={id:Date.now(),aId:ath.id,tipo:item.nome,desc:saleDesc(item,tam,qtd),valor:String(total),status,data:tod(),txn:status==="Pago"?genTxn():"",comp:null,itemId:item.id,tamanho:tam,qtd:Number(qtd||1)};
+      const nl=[...pagamentos,np];setPagamentos(nl);await sP(nl);await addFinHist(status==="Pago"?"Venda de estoque paga":"Venda de estoque registrada",np);
     }
     const itemList=itens.map(i=>{
       if(i.id!==item.id) return i;
@@ -1084,11 +1081,30 @@ export default function App() {
       return {...i,qtd:nq};
     });
     setItens(itemList);await sI(itemList);
+    return true;
+  };
+  const sendPedidoWA = async (item,ath,tam,qtd) => {
+    const status=pedidoF.status||"Pendente";
+    const ok=await registerStockSale(item,ath,tam,qtd,status);if(!ok)return;
+    const total=item.preco*Number(qtd||1);
+    const msg=`🛍️ *PEDIDO — Agrifut Loja*\n\n`+
+      `📦 Item: *${item.nome}*\n`+
+      `📐 Tamanho: *${tam}*\n`+
+      `🔢 Quantidade: *${qtd}*\n`+
+      `💰 Valor total: *${item.preco>0?fmtR(total):'A confirmar'}*\n\n`+
+      `Status: *${status}*\n\n`+
+      `👤 Atleta: *${ath?ath.nomeAtleta:'—'}*\n`+
+      `📂 Categoria: *${ath?ath.categoria||'—':'—'}*\n`+
+      `📱 Responsável: ${ath?ath.nomeResp:'—'}\n\n`+
+      `💳 *Pagamento via PIX — CNPJ:*\n${CNPJ}\n`+
+      `_Itajaí Esporte Clube_\n\n`+
+      `_Após o pagamento, envie o comprovante para este número._\n\n`+
+      `_Itajaí Agrifut 🟡⚫_`;
     const phone=ath&&onlyDigits(ath.telResp||ath.telAtleta);
     waOpen(phone?"55"+phone:WA_ADMIN,msg);
-    setPedidoItem(null);setPedidoF({tamanho:'',qtd:'1',aId:''});
-    if(!ath||item.preco===0) t2('✅ Pedido enviado via WhatsApp!');
+    setPedidoItem(null);resetPedidoF();t2('✅ Pedido enviado via WhatsApp!');
   };
+  const finishStockSale=async(item,ath,tam,qtd)=>{const ok=await registerStockSale(item,ath,tam,qtd,pedidoF.status||"Pendente");if(ok){setPedidoItem(null);resetPedidoF();t2("✅ Venda finalizada!");}};
 
   // ── Estoque ───────────────────────────────────────────
   const renderEstoque = () => {
@@ -1152,7 +1168,7 @@ export default function App() {
                       </div>
                       <div style={{display:'flex',gap:6}}>
                         {isVenda&&(user?.role==='atleta'||canManageEstoque)&&(
-                          <Btn small color={BL} onClick={()=>{setPedidoItem(item);setPedidoF({tamanho:item.tamanhos[0]||'',qtd:'1',aId:''});}} xst={{flex:1}}>
+                          <Btn small color={BL} onClick={()=>{setPedidoItem(item);setPedidoAthInput("");setPedidoF({tamanho:item.tamanhos[0]||'',qtd:'1',aId:'',status:'Pendente'});}} xst={{flex:1}}>
                             {user&&user.role==='atleta'?'🛒 Solicitar':'🛒 Registrar Venda'}
                           </Btn>
                         )}
@@ -1241,9 +1257,14 @@ export default function App() {
                 <Inp label="Quantidade" type="number" value={pedidoF.qtd} onChange={v=>setPedidoF(f=>({...f,qtd:v}))}/>
                 {precisaAtleta&&<div style={{gridColumn:'1/-1'}}>
                   <label style={{fontSize:11,fontWeight:700,color:'#555',textTransform:'uppercase',display:'block',marginBottom:6}}>Atleta comprador</label>
-                  <select value={pedidoF.aId||''} onChange={e=>setPedidoF(f=>({...f,aId:e.target.value}))} style={{border:'1.5px solid #ddd',borderRadius:8,padding:'8px 11px',fontSize:14,outline:'none',background:'white',width:'100%'}}>
-                    <option value="">Selecione o atleta...</option>
-                    {athletes.slice().sort(sortName).map(a=><option key={a.id} value={a.id}>{a.nomeAtleta}{a.categoria?' - '+a.categoria:''}{a.projeto?' - '+a.projeto:''}</option>)}
+                  <input list="pedido-athletes" value={pedidoAthInput} onChange={e=>setPedidoAth(e.target.value)} placeholder="Digite o nome do atleta" style={{border:'1.5px solid #ddd',borderRadius:8,padding:'8px 11px',fontSize:14,outline:'none',background:'white',width:'100%',boxSizing:'border-box'}}/>
+                  <datalist id="pedido-athletes">{athletes.slice().sort(sortName).map(a=><option key={a.id} value={pgtoAthLabel(a)}/>)}</datalist>
+                  {ath?<p style={{margin:'6px 0 0',fontSize:12,color:'#059669',fontWeight:700}}>✅ Atleta selecionado</p>:pedidoAthInput?<p style={{margin:'6px 0 0',fontSize:12,color:R,fontWeight:700}}>Digite e selecione um atleta cadastrado.</p>:null}
+                </div>}
+                {canManageEstoque&&<div style={{gridColumn:'1/-1'}}>
+                  <label style={{fontSize:11,fontWeight:700,color:'#555',textTransform:'uppercase',display:'block',marginBottom:6}}>Status do pagamento</label>
+                  <select value={pedidoF.status||'Pendente'} onChange={e=>setPedidoF(f=>({...f,status:e.target.value}))} style={{border:'1.5px solid #ddd',borderRadius:8,padding:'8px 11px',fontSize:14,outline:'none',background:'white',width:'100%'}}>
+                    {PSTAT.map(s=><option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>}
               </div>
@@ -1256,8 +1277,9 @@ export default function App() {
               <div style={{background:'#FFFBF0',borderRadius:10,padding:11,border:`1px solid ${G}44`,marginBottom:12,fontSize:12,color:'#92400E'}}>
                 ℹ️ Ao clicar em "Enviar Pedido", o WhatsApp abrirá com as informações. Realize o pagamento via PIX e envie o comprovante.
               </div>
-              <div style={{display:'flex',gap:10}}>
+              <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
                 <Btn color={GR} disabled={!tamSel||!pedidoF.qtd||Number(pedidoF.qtd)<1||(precisaAtleta&&!ath)} onClick={()=>sendPedidoWA(item,ath,tamSel,pedidoF.qtd)} xst={{flex:1}}>📲 Enviar Pedido via WhatsApp</Btn>
+                {canManageEstoque&&<Btn color={N} disabled={!tamSel||!pedidoF.qtd||Number(pedidoF.qtd)<1||(precisaAtleta&&!ath)} onClick={()=>finishStockSale(item,ath,tamSel,pedidoF.qtd)} xst={{flex:1}}>✅ Finalizar Venda</Btn>}
                 <Btn outline color="#888" onClick={()=>setPedidoItem(null)}>Cancelar</Btn>
               </div>
             </Modal>
@@ -1335,6 +1357,30 @@ export default function App() {
       </div>
     );
   };
+  const renderPgtoModal=()=>{
+    const pgtoSaleItem=findSaleItem(pgtoF.itemId||pgtoF.tipo);
+    return <Modal title={editPgto?"✏️ Editar Registro Financeiro":"💰 Novo Registro"} onClose={()=>{setShowPgto(false);setEditPgto(null);resetPgtoF();}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",display:"block",marginBottom:4}}>Atleta *</label>
+          <input list="pgto-athletes" value={pgtoAthInput} onChange={e=>setPgtoAth(e.target.value)} placeholder="Digite o nome do atleta" style={{border:"1.5px solid #ddd",borderRadius:8,padding:"8px 11px",fontSize:14,width:"100%",outline:"none",boxSizing:"border-box"}}/>
+          <datalist id="pgto-athletes">{athletes.slice().sort(sortName).map(a=><option key={a.id} value={pgtoAthLabel(a)}/>)}</datalist>
+          {pgtoF.aId?<p style={{margin:"6px 0 0",fontSize:12,color:"#059669",fontWeight:700}}>✅ Atleta selecionado</p>:pgtoAthInput?<div style={{marginTop:8,background:"#FFFBEB",border:`1px solid ${G}66`,borderRadius:8,padding:10,display:"flex",gap:10,alignItems:"center",justifyContent:"space-between",flexWrap:"wrap"}}><span style={{fontSize:12,color:"#92400E",fontWeight:700}}>Nenhum cadastro encontrado para esse nome.</span><Btn small color={G} onClick={createQuickFinanceAth}>+ Cadastro rápido</Btn></div>:<p style={{margin:"6px 0 0",fontSize:12,color:"#64748B"}}>Comece a digitar para ver as opções.</p>}
+        </div>
+        <Sel label="Tipo *" value={pgtoF.tipo} onChange={setPgtoTipo} opts={financeTypeOptions()}/>
+        <Sel label="Status" value={pgtoF.status} onChange={v=>setPgtoF(f=>({...f,status:v}))} opts={PSTAT}/>
+        {pgtoSaleItem&&<>
+          <Sel label="Tamanho" value={pgtoF.tamanho} onChange={v=>applyPgtoSale(pgtoSaleItem,{tamanho:v})} opts={pgtoSaleItem.tamanhos||[]}/>
+          <Inp label="Quantidade" type="number" value={pgtoF.qtd} onChange={v=>applyPgtoSale(pgtoSaleItem,{qtd:v})}/>
+        </>}
+        <Inp label="Descrição" value={pgtoF.desc} onChange={v=>setPgtoF(f=>({...f,desc:v}))} placeholder="ex: Campeonato"/>
+        <Inp label="Valor (R$)" type="number" value={pgtoF.valor} disabled={!!pgtoSaleItem} onChange={v=>setPgtoF(f=>({...f,valor:v}))}/>
+        <Inp label="Data" type="date" value={pgtoF.data} onChange={v=>setPgtoF(f=>({...f,data:v}))}/>
+        <div style={{gridColumn:"1/-1"}}><FilePick label="📎 Comprovante (opcional)" file={pgtoF.comp} onChange={f=>setPgtoF(fm=>({...fm,comp:f}))}/></div>
+      </div>
+      <div style={{display:"flex",gap:10}}><Btn color={N} disabled={!pgtoF.tipo||!pgtoF.aId} onClick={editPgto?saveEditPgto:addPgto}>✅ Salvar</Btn><Btn outline color="#888" onClick={()=>{setShowPgto(false);setEditPgto(null);resetPgtoF();}}>Cancelar</Btn></div>
+    </Modal>;
+  };
   const renderFin=()=>(
     <div style={{maxWidth:1100,margin:"24px auto",padding:"0 16px"}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:14}}>
@@ -1350,7 +1396,7 @@ export default function App() {
         <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:170}}>
           <label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:.5}}>Tipo</label>
           <select value={fPTp} onChange={e=>setFPTp(e.target.value)} style={{border:"1.5px solid #ddd",borderRadius:8,padding:"8px 11px",fontSize:14,outline:"none",background:"white",width:"100%"}}>
-            <option value="all">Todos</option>{PTYPES.map(t=><option key={t} value={t}>{t}</option>)}
+            <option value="all">Todos</option>{financeTypeOptions().map(t=><option key={t} value={t}>{t}</option>)}
           </select>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:230,flex:1}}>
@@ -1438,7 +1484,7 @@ export default function App() {
           </div>
         )}
       </div>
-      {showPgto&&<Modal title={editPgto?"✏️ Editar Registro Financeiro":"💰 Novo Registro"} onClose={()=>{setShowPgto(false);setEditPgto(null);resetPgtoF();}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}><div style={{gridColumn:"1/-1"}}><label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",display:"block",marginBottom:4}}>Atleta *</label><input list="pgto-athletes" value={pgtoAthInput} onChange={e=>setPgtoAth(e.target.value)} placeholder="Digite o nome do atleta" style={{border:"1.5px solid #ddd",borderRadius:8,padding:"8px 11px",fontSize:14,width:"100%",outline:"none",boxSizing:"border-box"}}/><datalist id="pgto-athletes">{athletes.slice().sort(sortName).map(a=><option key={a.id} value={pgtoAthLabel(a)}/>)}</datalist>{pgtoF.aId?<p style={{margin:"6px 0 0",fontSize:12,color:"#059669",fontWeight:700}}>✅ Atleta selecionado</p>:pgtoAthInput?<div style={{marginTop:8,background:"#FFFBEB",border:`1px solid ${G}66`,borderRadius:8,padding:10,display:"flex",gap:10,alignItems:"center",justifyContent:"space-between",flexWrap:"wrap"}}><span style={{fontSize:12,color:"#92400E",fontWeight:700}}>Nenhum cadastro encontrado para esse nome.</span><Btn small color={G} onClick={createQuickFinanceAth}>+ Cadastro rápido</Btn></div>:<p style={{margin:"6px 0 0",fontSize:12,color:"#64748B"}}>Comece a digitar para ver as opções.</p>}</div><Sel label="Tipo *" value={pgtoF.tipo} onChange={v=>setPgtoF(f=>({...f,tipo:v}))} opts={PTYPES}/><Sel label="Status" value={pgtoF.status} onChange={v=>setPgtoF(f=>({...f,status:v}))} opts={PSTAT}/><Inp label="Descrição" value={pgtoF.desc} onChange={v=>setPgtoF(f=>({...f,desc:v}))} placeholder="ex: Campeonato"/><Inp label="Valor (R$)" type="number" value={pgtoF.valor} onChange={v=>setPgtoF(f=>({...f,valor:v}))}/><Inp label="Data" type="date" value={pgtoF.data} onChange={v=>setPgtoF(f=>({...f,data:v}))}/><div style={{gridColumn:"1/-1"}}><FilePick label="📎 Comprovante (opcional)" file={pgtoF.comp} onChange={f=>setPgtoF(fm=>({...fm,comp:f}))}/></div></div><div style={{display:"flex",gap:10}}><Btn color={N} disabled={!pgtoF.tipo||!pgtoF.aId} onClick={editPgto?saveEditPgto:addPgto}>✅ Salvar</Btn><Btn outline color="#888" onClick={()=>{setShowPgto(false);setEditPgto(null);resetPgtoF();}}>Cancelar</Btn></div></Modal>}
+      {showPgto&&renderPgtoModal()}
     </div>
   );
 
