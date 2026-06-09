@@ -574,13 +574,20 @@ export default function App() {
     const cpf=onlyDigits(draft?.cpfAtleta);
     const rg=normDoc(draft?.rgAtletaNum);
     const dob=draft?.dataNasc||"";
+    const nome=normTxt(draft?.nomeAtleta);
     return athletes.reduce((acc,a)=>{
       if(!a||String(a.id)===String(ignoreId||"")) return acc;
       const reasons=[];
-      if(cpf.length===11&&onlyDigits(a.cpfAtleta)===cpf) reasons.push("CPF");
-      if(rg&&normDoc(a.rgAtletaNum)===rg) reasons.push("RG");
-      if(dob&&a.dataNasc===dob) reasons.push("Data de nascimento");
-      if(reasons.length) acc.push({athlete:a,reasons,block:reasons.includes("CPF")||reasons.includes("RG")});
+      const cpfMatch=cpf.length===11&&onlyDigits(a.cpfAtleta)===cpf;
+      const rgMatch=!!rg&&normDoc(a.rgAtletaNum)===rg;
+      const dobMatch=!!dob&&a.dataNasc===dob;
+      const nomeMatch=!!nome&&normTxt(a.nomeAtleta)===nome;
+      const emphatic=nomeMatch&&cpfMatch&&dobMatch;
+      if(emphatic) reasons.push("Nome");
+      if(cpfMatch) reasons.push("CPF");
+      if(rgMatch) reasons.push("RG");
+      if(dobMatch&&(cpfMatch||rgMatch||emphatic)) reasons.push("Data de nascimento");
+      if(reasons.length) acc.push({athlete:a,reasons,block:cpfMatch||rgMatch,emphatic});
       return acc;
     },[]);
   };
@@ -588,17 +595,18 @@ export default function App() {
   const DuplicateNotice=({matches})=>{
     if(!matches.length) return null;
     const block=matches.some(d=>d.block);
+    const emphatic=matches.some(d=>d.emphatic);
     const shown=matches.slice(0,5);
-    return <div style={{gridColumn:"1/-1",background:block?"#FEF2F2":"#FFFBEB",border:`1.5px solid ${block?R:OR}55`,borderRadius:10,padding:12}}>
-      <p style={{margin:"0 0 8px",fontWeight:900,color:block?R:OR,fontSize:13}}>⚠️ Possível cadastro repetido</p>
+    return <div style={{gridColumn:"1/-1",background:emphatic?"#7F1D1D":block?"#FEF2F2":"#FFFBEB",border:`1.5px solid ${emphatic?"#7F1D1D":block?R:OR}55`,borderRadius:10,padding:12}}>
+      <p style={{margin:"0 0 8px",fontWeight:900,color:emphatic?"white":block?R:OR,fontSize:13}}>{emphatic?"🚨 Cadastro provavelmente duplicado":"⚠️ Possível cadastro repetido"}</p>
       <div style={{display:"flex",flexDirection:"column",gap:6}}>
-        {shown.map(d=><div key={d.athlete.id} style={{background:"white",borderRadius:8,padding:"8px 10px",border:"1px solid #E5E7EB"}}>
+        {shown.map(d=><div key={d.athlete.id} style={{background:"white",borderRadius:8,padding:"8px 10px",border:`1px solid ${d.emphatic?R+"55":"#E5E7EB"}`}}>
           <p style={{margin:0,fontWeight:800,color:N,fontSize:13}}>{d.athlete.nomeAtleta||"Atleta sem nome"}</p>
           <p style={{margin:"2px 0 0",fontSize:12,color:"#64748B"}}>{d.reasons.join(", ")} · {d.athlete.categoria||"Sem categoria"} · {d.athlete.projeto||"Sem projeto"}</p>
         </div>)}
       </div>
-      {matches.length>shown.length&&<p style={{margin:"7px 0 0",fontSize:12,color:"#64748B"}}>Mais {matches.length-shown.length} registro(s) parecido(s).</p>}
-      <p style={{margin:"8px 0 0",fontSize:12,fontWeight:700,color:block?R:"#92400E"}}>{block?"CPF ou RG já cadastrado bloqueia salvar este atleta.":"Data de nascimento igual é apenas um alerta para conferência."}</p>
+      {matches.length>shown.length&&<p style={{margin:"7px 0 0",fontSize:12,color:emphatic?"#FEE2E2":"#64748B"}}>Mais {matches.length-shown.length} registro(s) parecido(s).</p>}
+      <p style={{margin:"8px 0 0",fontSize:12,fontWeight:700,color:emphatic?"white":block?R:"#92400E"}}>{emphatic?"Nome, CPF e data de nascimento batem com cadastro existente. Confira antes de continuar.":"CPF ou RG já cadastrado bloqueia salvar este atleta."}</p>
     </div>;
   };
 
