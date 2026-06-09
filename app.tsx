@@ -71,6 +71,12 @@ const fmtR = v => v ? `R$ ${Number(v).toFixed(2).replace(".",",")}` : "-";
 const normTxt = v => String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
 const onlyDigits = v => String(v||"").replace(/\D/g,"");
 const normDoc = v => onlyDigits(v) || normTxt(v).replace(/[^a-z0-9]/g,"");
+const categoryByBirth = d => { const a=Number(ageOf(d)); return a>=6&&a<=18?`Sub-${a}`:""; };
+const LOWER_NAME_WORDS = new Set(["da","de","do","das","dos","e"]);
+const capNamePart = w => w?w.charAt(0).toLocaleUpperCase("pt-BR")+w.slice(1):w;
+const titleName = v => String(v||"").trim().replace(/\s+/g," ").toLocaleLowerCase("pt-BR").split(" ").map((w,i)=>i>0&&LOWER_NAME_WORDS.has(w)?w:w.split("-").map(capNamePart).join("-")).join(" ");
+const TITLE_FIELDS = ["nomeAtleta","nomeResp","contatoEmerg","endereco","bairro","cidade","escola"];
+const normalizeCadastro = draft => { const n={...draft}; TITLE_FIELDS.forEach(k=>{if(n[k])n[k]=titleName(n[k]);}); return n; };
 const sortName = (a,b) => (a.nomeAtleta||"").localeCompare(b.nomeAtleta||"", "pt-BR", {sensitivity:"base"});
 const isBirthdayToday = a => {
   if(!a.dataNasc) return false;
@@ -557,6 +563,7 @@ export default function App() {
   const sI=async l=>{try{await window.storage.set("agrifut-i9",JSON.stringify(l));}catch(e){}};
   const t2=(m,d=3000)=>{setToast(m);setTimeout(()=>setToast(""),d);};
   const sF=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const sBirth=v=>setForm(f=>{const oldAuto=categoryByBirth(f.dataNasc);const nextAuto=categoryByBirth(v);return{...f,dataNasc:v,categoria:nextAuto&&(!f.categoria||f.categoria===oldAuto)?nextAuto:f.categoria};});
   const addFinHist=async(action,pg,extra="")=>{
     const ath=athletes.find(a=>a.id===pg?.aId);
     const entry={id:Date.now()+Math.random(),data:new Date().toISOString(),action,aId:pg?.aId||"",atleta:ath?ath.nomeAtleta:"—",tipo:pg?.tipo||"",valor:pg?.valor||"",status:pg?.status||"",extra};
@@ -615,15 +622,16 @@ export default function App() {
   };
 
   const submit=async()=>{
-    if(hasDuplicateBlock(form)){setStep(0);t2("⚠️ CPF ou RG já cadastrado. Confira o atleta existente.");return;}
+    const clean=normalizeCadastro({...form,categoria:form.categoria||categoryByBirth(form.dataNasc)});
+    if(hasDuplicateBlock(clean)){setStep(0);t2("⚠️ CPF ou RG já cadastrado. Confira o atleta existente.");return;}
     const token=genToken();
-    const a={...form,id:Date.now(),token,age:ageOf(form.dataNasc),createdAt:new Date().toISOString()};
+    const a={...clean,id:Date.now(),token,age:ageOf(clean.dataNasc),createdAt:new Date().toISOString()};
     const nl=[...athletes,a];setAthletes(nl);await sA(nl);
     setNewAthToken(token);
     setForm({...BLANK});setStep(0);
   };
 
-  const saveEdit=async()=>{if(hasDuplicateBlock(editAth,editAth.id)){t2("⚠️ CPF ou RG já cadastrado em outro atleta.");return;}const nl=athletes.map(a=>a.id===editAth.id?{...editAth,age:ageOf(editAth.dataNasc)}:a);setAthletes(nl);await sA(nl);setEditAth(null);t2("✅ Atualizado!");};
+  const saveEdit=async()=>{const clean=normalizeCadastro(editAth);if(hasDuplicateBlock(clean,editAth.id)){t2("⚠️ CPF ou RG já cadastrado em outro atleta.");return;}const nl=athletes.map(a=>a.id===editAth.id?{...clean,age:ageOf(clean.dataNasc)}:a);setAthletes(nl);await sA(nl);setEditAth(null);t2("✅ Atualizado!");};
   const doMig=async()=>{const nl=athletes.map(a=>a.id===migAth.id?{...a,categoria:migC||a.categoria,projeto:migP||a.projeto}:a);setAthletes(nl);await sA(nl);setMigAth(null);t2("✅ Migrado!");};
   const delA=async id=>{if(!confirm("Remover atleta?"))return;const nl=athletes.filter(a=>a.id!==id);setAthletes(nl);await sA(nl);setSelAth(null);};
   const onPaid=async txnCode=>{if(!stripeTarget)return;const updated={...stripeTarget.pgto,status:"Pago",txn:txnCode};const nl=pagamentos.map(p=>p.id===stripeTarget.pgto.id?updated:p);setPagamentos(nl);await sP(nl);await addFinHist("Pagamento confirmado",updated,txnCode);t2("✅ Pagamento confirmado!");setStripeTarget(null);};
@@ -716,7 +724,7 @@ export default function App() {
           </label>
         </div>
         <Inp label="Nome Completo" req value={form.nomeAtleta} onChange={v=>sF("nomeAtleta",v)} full/>
-        <Inp label="Data de Nascimento" req type="date" value={form.dataNasc} max={maxDOB()} min={minDOB()} onChange={v=>sF("dataNasc",v)}/>
+        <Inp label="Data de Nascimento" req type="date" value={form.dataNasc} max={maxDOB()} min={minDOB()} onChange={sBirth}/>
         <Inp label="Idade" value={a!==""?(a+" anos"):""} disabled/>
         {a!==""&&a<6&&<p style={{gridColumn:"1/-1",color:R,fontSize:12,fontWeight:700,margin:0}}>⚠️ Mínimo 6 anos.</p>}
         {a!==""&&a>18&&<p style={{gridColumn:"1/-1",color:R,fontSize:12,fontWeight:700,margin:0}}>⚠️ Máximo 18 anos.</p>}
