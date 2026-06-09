@@ -504,7 +504,7 @@ export default function App() {
   const [finHist,setFinHist]=useState([]);
   const [presencas,setPresencas]=useState([]);
   const [camps,setCamps]=useState([]);
-  const [profs,setProfs]=useState([{id:"p1",nome:"Professor Demo",user:"prof",pass:"prof123",projeto:"Academy",categoria:"Sub-13"}]);
+  const [profs,setProfs]=useState([{id:"p1",nome:"Professor Demo",user:"prof",pass:"prof123",projeto:"Academy",categoria:"Sub-13",financeiro:false}]);
   const [loading,setLoading]=useState(true);
 
   // UI state
@@ -526,7 +526,7 @@ export default function App() {
   const [fPSt,setFPSt]=useState("all");const[fPTp,setFPTp]=useState("all");const[fPCats,setFPCats]=useState([]);const[fPAth,setFPAth]=useState("");
   const [showCamp,setShowCamp]=useState(false);const[campF,setCampF]=useState({nome:"",data:"",cat:"",proj:""});const[selCamp,setSelCamp]=useState(null);
   const [showEv,setShowEv]=useState(false);const[evF,setEvF]=useState({nome:"",data:"",local:"",taxa:""});
-  const [showProf,setShowProf]=useState(false);const[profF,setProfF]=useState({nome:"",user:"",pass:"",projeto:"",categoria:""});
+  const [showProf,setShowProf]=useState(false);const[profF,setProfF]=useState({nome:"",user:"",pass:"",projeto:"",categoria:"",financeiro:false});
   const [docTab,setDocTab]=useState("ver");
   const [toast,setToast]=useState("");
   const [stripeTarget,setStripeTarget]=useState(null);
@@ -573,7 +573,7 @@ export default function App() {
     setFinHist(nl);await sFH(nl);
   };
 
-  const handleLogin=({role,id,nome,tab:t})=>{setUser({role,id,nome});setTab(t||"athletes");};
+  const handleLogin=({role,id,nome,tab:t,...rest})=>{setUser({role,id,nome,...rest});setTab(t||"athletes");};
   const duplicateAthletes=(draft,ignoreId=null)=>{
     const cpf=onlyDigits(draft?.cpfAtleta);
     const rg=normDoc(draft?.rgAtletaNum);
@@ -722,9 +722,9 @@ export default function App() {
   const togConv=async(camp,evId,aId)=>{const ev=(camp.eventos||[]).find(e=>e.id===evId);if(!camp.inscritos.includes(aId)&&!campPayOk(camp,ev,aId)&&!hasTaxaGeralOk(aId)){t2("⚠️ Atleta sem inscrição ou taxa paga/isenta!");return;}const nl=camps.map(c=>c.id===camp.id?{...c,eventos:c.eventos.map(ev=>ev.id===evId?{...ev,convocados:ev.convocados.includes(aId)?ev.convocados.filter(x=>x!==aId):[...ev.convocados,aId]}:ev)}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===camp.id));};
   const delEv=async(cId,eId)=>{const nl=camps.map(c=>c.id===cId?{...c,eventos:c.eventos.filter(e=>e.id!==eId)}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===cId));};
   const expConv=(camp,ev)=>{const list=ev.convocados.map((id,i)=>{const a=athletes.find(x=>x.id===id);const taxa=ev.taxa?` · Taxa: ${campPayLabel(camp,ev,id)}`:"";return`${i+1}. ${a?a.nomeAtleta:"?"} (${a?a.categoria:"—"}${a&&a.posicao?" · "+a.posicao:""}${taxa})`;});const msg=`🏆 *${camp.nome}*\n⚽ *${ev.nome}*\n📅 ${fmtD(ev.data)}${ev.local?"\n📍 "+ev.local:""}${ev.taxa?"\n💰 "+fmtR(ev.taxa):""}\n\n👕 *CONVOCADOS (${ev.convocados.length}):*\n${list.join("\n")}\n\n_Itajaí Agrifut 🟡⚫_`;waOpen(WA_ADMIN,msg);};
-  const resetProfF=()=>setProfF({nome:"",user:"",pass:"",projeto:"",categoria:""});
-  const openEditProf=pf=>{setProfF({...pf});setShowProf(true);};
-  const addProf=async()=>{if(!profF.nome||!profF.user||!profF.pass)return;const item={...profF,id:profF.id||"p"+Date.now()};const nl=profF.id?profs.map(p=>p.id===profF.id?item:p):[...profs,item];setProfs(nl);await sPf(nl);setShowProf(false);resetProfF();t2(profF.id?"✅ Professor atualizado!":"✅ Professor adicionado!");};
+  const resetProfF=()=>setProfF({nome:"",user:"",pass:"",projeto:"",categoria:"",financeiro:false});
+  const openEditProf=pf=>{setProfF({...pf,financeiro:!!pf.financeiro});setShowProf(true);};
+  const addProf=async()=>{if(!profF.nome||!profF.user||!profF.pass)return;const item={...profF,financeiro:!!profF.financeiro,id:profF.id||"p"+Date.now()};const nl=profF.id?profs.map(p=>p.id===profF.id?item:p):[...profs,item];setProfs(nl);await sPf(nl);setShowProf(false);resetProfF();t2(profF.id?"✅ Professor atualizado!":"✅ Professor adicionado!");};
   const eligibleForCamp=camp=>{const mx=catN(camp.cat);return athletes.filter(a=>(!camp.proj||a.projeto===camp.proj)&&(!camp.cat||catN(a.categoria)<=mx));};
   const canMig=user&&(user.role==="admin"||user.role==="professor");
   const doWA=a=>waOpen("55"+a.telResp.replace(/\D/g,""),`Olá ${a.nomeResp}! Contato Agrifut 🟡⚫`);
@@ -1434,8 +1434,8 @@ export default function App() {
   const renderProfs=()=>(
     <div style={{maxWidth:800,margin:"24px auto",padding:"0 16px"}}>
       <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn color={G} onClick={()=>{resetProfF();setShowProf(true);}}>+ Novo Professor</Btn></div>
-      <div style={{background:"white",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 8px #0001"}}>{profs.length===0?<p style={{padding:32,textAlign:"center",color:"#888"}}>Nenhum professor</p>:profs.map((pf,i)=><div key={pf.id} style={{display:"flex",gap:12,padding:"11px 16px",borderBottom:"1px solid #F1F5F9",alignItems:"center",background:i%2===0?"white":"#F8FAFC"}}><div style={{width:36,height:36,borderRadius:8,background:N,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:G,fontWeight:800}}>{pf.nome?pf.nome[0]:"?"}</span></div><div style={{flex:1}}><p style={{margin:0,fontWeight:700,color:N}}>{pf.nome}</p><p style={{margin:0,fontSize:12,color:"#64748B"}}>Login: <strong>{pf.user}</strong> · {pf.projeto||"—"} · {pf.categoria||"—"}</p></div><button onClick={()=>openEditProf(pf)} style={{background:"none",border:"none",color:N,cursor:"pointer",fontSize:16}}>✏️</button><button onClick={async()=>{const nl=profs.filter(x=>x.id!==pf.id);setProfs(nl);await sPf(nl);}} style={{background:"none",border:"none",color:R,cursor:"pointer",fontSize:16}}>🗑</button></div>)}</div>
-      {showProf&&<Modal title={profF.id?"✏️ Editar Professor":"➕ Novo Professor"} onClose={()=>{setShowProf(false);resetProfF();}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}><Inp label="Nome" req value={profF.nome} onChange={v=>setProfF(f=>({...f,nome:v}))} full/><Inp label="Login" req value={profF.user} onChange={v=>setProfF(f=>({...f,user:v}))}/><Inp label="Senha" req value={profF.pass} onChange={v=>setProfF(f=>({...f,pass:v}))} type="password"/><Sel label="Projeto" value={profF.projeto} onChange={v=>setProfF(f=>({...f,projeto:v}))} opts={PROJS}/><Sel label="Categoria" value={profF.categoria} onChange={v=>setProfF(f=>({...f,categoria:v}))} opts={CATS}/></div><div style={{display:"flex",gap:10}}><Btn color={N} disabled={!profF.nome||!profF.user||!profF.pass} onClick={addProf}>✅ Salvar</Btn><Btn outline color="#888" onClick={()=>{setShowProf(false);resetProfF();}}>Cancelar</Btn></div></Modal>}
+      <div style={{background:"white",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 8px #0001"}}>{profs.length===0?<p style={{padding:32,textAlign:"center",color:"#888"}}>Nenhum professor</p>:profs.map((pf,i)=><div key={pf.id} style={{display:"flex",gap:12,padding:"11px 16px",borderBottom:"1px solid #F1F5F9",alignItems:"center",background:i%2===0?"white":"#F8FAFC"}}><div style={{width:36,height:36,borderRadius:8,background:N,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:G,fontWeight:800}}>{pf.nome?pf.nome[0]:"?"}</span></div><div style={{flex:1}}><p style={{margin:0,fontWeight:700,color:N}}>{pf.nome}</p><p style={{margin:0,fontSize:12,color:"#64748B"}}>Login: <strong>{pf.user}</strong> · {pf.projeto||"—"} · {pf.categoria||"—"} · Financeiro: <strong>{pf.financeiro?"Sim":"Não"}</strong></p></div><button onClick={()=>openEditProf(pf)} style={{background:"none",border:"none",color:N,cursor:"pointer",fontSize:16}}>✏️</button><button onClick={async()=>{const nl=profs.filter(x=>x.id!==pf.id);setProfs(nl);await sPf(nl);}} style={{background:"none",border:"none",color:R,cursor:"pointer",fontSize:16}}>🗑</button></div>)}</div>
+      {showProf&&<Modal title={profF.id?"✏️ Editar Professor":"➕ Novo Professor"} onClose={()=>{setShowProf(false);resetProfF();}}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}><Inp label="Nome" req value={profF.nome} onChange={v=>setProfF(f=>({...f,nome:v}))} full/><Inp label="Login" req value={profF.user} onChange={v=>setProfF(f=>({...f,user:v}))}/><Inp label="Senha" req value={profF.pass} onChange={v=>setProfF(f=>({...f,pass:v}))} type="password"/><Sel label="Projeto" value={profF.projeto} onChange={v=>setProfF(f=>({...f,projeto:v}))} opts={PROJS}/><Sel label="Categoria" value={profF.categoria} onChange={v=>setProfF(f=>({...f,categoria:v}))} opts={CATS}/><label style={{gridColumn:"1/-1",display:"flex",alignItems:"center",gap:8,fontWeight:800,fontSize:13,color:N,background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:10,padding:"10px 12px"}}><input type="checkbox" checked={!!profF.financeiro} onChange={e=>setProfF(f=>({...f,financeiro:e.target.checked}))} style={{accentColor:N,width:16,height:16}}/>Permitir acesso às movimentações do financeiro</label></div><div style={{display:"flex",gap:10}}><Btn color={N} disabled={!profF.nome||!profF.user||!profF.pass} onClick={addProf}>✅ Salvar</Btn><Btn outline color="#888" onClick={()=>{setShowProf(false);resetProfF();}}>Cancelar</Btn></div></Modal>}
     </div>
   );
 
@@ -1550,7 +1550,7 @@ export default function App() {
   );
 
   const ADMIN_TABS=[{id:"athletes",l:"📋 Atletas"},{id:"form",l:"➕ Cadastrar"},{id:"presenca",l:"📅 Presença"},{id:"campeonatos",l:"🏆 Campeonatos"},{id:"financeiro",l:"💰 Financeiro"},{id:"estoque",l:"🛍️ Estoque"},{id:"professores",l:"👨‍🏫 Professores"}];
-  const PROF_TABS=[{id:"athletes",l:"📋 Turma"},{id:"form",l:"➕ Cadastrar"},{id:"presenca",l:"📅 Presença"},{id:"campeonatos",l:"🏆 Campeonatos"},{id:"estoque",l:"🛍️ Estoque"}];
+  const PROF_TABS=[{id:"athletes",l:"📋 Turma"},{id:"form",l:"➕ Cadastrar"},{id:"presenca",l:"📅 Presença"},{id:"campeonatos",l:"🏆 Campeonatos"},...(user.financeiro?[{id:"financeiro",l:"💰 Financeiro"}]:[]),{id:"estoque",l:"🛍️ Estoque"}];
   const PUBLICO_TABS=[{id:"form",l:"📝 Cadastro"}];
   const ATLETA_TABS=[{id:"portal",l:"⚽ Meu Perfil"},{id:"estoque",l:"🛍️ Loja"}];
   const tabs=user.role==="admin"?ADMIN_TABS:user.role==="professor"?PROF_TABS:user.role==="publico"?PUBLICO_TABS:ATLETA_TABS;
@@ -1646,7 +1646,7 @@ export default function App() {
       {tab==="athletes"&&renderAthletes()}
       {tab==="presenca"&&renderPresenca()}
       {tab==="campeonatos"&&renderCamps()}
-      {tab==="financeiro"&&renderFin()}
+      {tab==="financeiro"&&(user.role==="admin"||user.financeiro)&&renderFin()}
       {tab==="estoque"&&renderEstoque()}
       {tab==="professores"&&renderProfs()}
       {tab==="portal"&&renderPortal()}
@@ -1750,7 +1750,7 @@ function StaffLogin({onLogin, profs, athletes}) {
     if(uc==="admin"&&pc==="agrifut123"){onLogin({role:"admin",nome:"Administrador",tab:"athletes"});return;}
     // Professor
     const pr=profs.find(x=>x.user===uc&&x.pass===pc);
-    if(pr){onLogin({role:"professor",id:pr.id,nome:pr.nome,proj:pr.projeto,cat:pr.categoria,tab:"athletes"});return;}
+    if(pr){onLogin({role:"professor",id:pr.id,nome:pr.nome,proj:pr.projeto,cat:pr.categoria,financeiro:!!pr.financeiro,tab:"athletes"});return;}
     // Athlete: user = CPF sem pontos, pass = data nascimento DDMMAAAA
     const cpfClean = uc.replace(/\D/g,"");
     const passClean = pc.replace(/\D/g,"");
