@@ -69,6 +69,8 @@ const fmtCard = v => v.replace(/\D/g,"").slice(0,16).replace(/(\d{4})(?=\d)/g,"$
 const fmtExp = v => { const d=v.replace(/\D/g,"").slice(0,4); return d.length>2?d.slice(0,2)+"/"+d.slice(2):d; };
 const fmtR = v => v ? `R$ ${Number(v).toFixed(2).replace(".",",")}` : "-";
 const normTxt = v => String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
+const onlyDigits = v => String(v||"").replace(/\D/g,"");
+const normDoc = v => onlyDigits(v) || normTxt(v).replace(/[^a-z0-9]/g,"");
 const sortName = (a,b) => (a.nomeAtleta||"").localeCompare(b.nomeAtleta||"", "pt-BR", {sensitivity:"base"});
 const isBirthdayToday = a => {
   if(!a.dataNasc) return false;
@@ -563,6 +565,37 @@ export default function App() {
   };
 
   const handleLogin=({role,id,nome,tab:t})=>{setUser({role,id,nome});setTab(t||"athletes");};
+  const duplicateAthletes=(draft,ignoreId=null)=>{
+    const cpf=onlyDigits(draft?.cpfAtleta);
+    const rg=normDoc(draft?.rgAtletaNum);
+    const dob=draft?.dataNasc||"";
+    return athletes.reduce((acc,a)=>{
+      if(!a||String(a.id)===String(ignoreId||"")) return acc;
+      const reasons=[];
+      if(cpf.length===11&&onlyDigits(a.cpfAtleta)===cpf) reasons.push("CPF");
+      if(rg&&normDoc(a.rgAtletaNum)===rg) reasons.push("RG");
+      if(dob&&a.dataNasc===dob) reasons.push("Data de nascimento");
+      if(reasons.length) acc.push({athlete:a,reasons,block:reasons.includes("CPF")||reasons.includes("RG")});
+      return acc;
+    },[]);
+  };
+  const hasDuplicateBlock=(draft,ignoreId=null)=>duplicateAthletes(draft,ignoreId).some(d=>d.block);
+  const DuplicateNotice=({matches})=>{
+    if(!matches.length) return null;
+    const block=matches.some(d=>d.block);
+    const shown=matches.slice(0,5);
+    return <div style={{gridColumn:"1/-1",background:block?"#FEF2F2":"#FFFBEB",border:`1.5px solid ${block?R:OR}55`,borderRadius:10,padding:12}}>
+      <p style={{margin:"0 0 8px",fontWeight:900,color:block?R:OR,fontSize:13}}>⚠️ Possível cadastro repetido</p>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {shown.map(d=><div key={d.athlete.id} style={{background:"white",borderRadius:8,padding:"8px 10px",border:"1px solid #E5E7EB"}}>
+          <p style={{margin:0,fontWeight:800,color:N,fontSize:13}}>{d.athlete.nomeAtleta||"Atleta sem nome"}</p>
+          <p style={{margin:"2px 0 0",fontSize:12,color:"#64748B"}}>{d.reasons.join(", ")} · {d.athlete.categoria||"Sem categoria"} · {d.athlete.projeto||"Sem projeto"}</p>
+        </div>)}
+      </div>
+      {matches.length>shown.length&&<p style={{margin:"7px 0 0",fontSize:12,color:"#64748B"}}>Mais {matches.length-shown.length} registro(s) parecido(s).</p>}
+      <p style={{margin:"8px 0 0",fontSize:12,fontWeight:700,color:block?R:"#92400E"}}>{block?"CPF ou RG já cadastrado bloqueia salvar este atleta.":"Data de nascimento igual é apenas um alerta para conferência."}</p>
+    </div>;
+  };
 
   const canNext=()=>{
     if(user&&user.role==='admin') return true;
@@ -571,6 +604,7 @@ export default function App() {
       if(!form.nomeAtleta||!form.dataNasc) return false;
       const cpfL=form.cpfAtleta?form.cpfAtleta.replace(/\D/g,"").length:0;
       if(cpfL>0&&cpfL<11) return false;
+      if(hasDuplicateBlock(form)) return false;
       if(form.telAtleta?form.telAtleta.replace(/\D/g,"").length<10:true) return false;
       if(a>18||a<6) return false;
       return true;
@@ -581,6 +615,7 @@ export default function App() {
   };
 
   const submit=async()=>{
+    if(hasDuplicateBlock(form)){setStep(0);t2("⚠️ CPF ou RG já cadastrado. Confira o atleta existente.");return;}
     const token=genToken();
     const a={...form,id:Date.now(),token,age:ageOf(form.dataNasc),createdAt:new Date().toISOString()};
     const nl=[...athletes,a];setAthletes(nl);await sA(nl);
@@ -588,7 +623,7 @@ export default function App() {
     setForm({...BLANK});setStep(0);
   };
 
-  const saveEdit=async()=>{const nl=athletes.map(a=>a.id===editAth.id?{...editAth,age:ageOf(editAth.dataNasc)}:a);setAthletes(nl);await sA(nl);setEditAth(null);t2("✅ Atualizado!");};
+  const saveEdit=async()=>{if(hasDuplicateBlock(editAth,editAth.id)){t2("⚠️ CPF ou RG já cadastrado em outro atleta.");return;}const nl=athletes.map(a=>a.id===editAth.id?{...editAth,age:ageOf(editAth.dataNasc)}:a);setAthletes(nl);await sA(nl);setEditAth(null);t2("✅ Atualizado!");};
   const doMig=async()=>{const nl=athletes.map(a=>a.id===migAth.id?{...a,categoria:migC||a.categoria,projeto:migP||a.projeto}:a);setAthletes(nl);await sA(nl);setMigAth(null);t2("✅ Migrado!");};
   const delA=async id=>{if(!confirm("Remover atleta?"))return;const nl=athletes.filter(a=>a.id!==id);setAthletes(nl);await sA(nl);setSelAth(null);};
   const onPaid=async txnCode=>{if(!stripeTarget)return;const updated={...stripeTarget.pgto,status:"Pago",txn:txnCode};const nl=pagamentos.map(p=>p.id===stripeTarget.pgto.id?updated:p);setPagamentos(nl);await sP(nl);await addFinHist("Pagamento confirmado",updated,txnCode);t2("✅ Pagamento confirmado!");setStripeTarget(null);};
@@ -670,6 +705,7 @@ export default function App() {
 
   const renderStep=()=>{
     const a=form.dataNasc?Number(ageOf(form.dataNasc)):"";
+    const dupMatches=duplicateAthletes(form);
     if(step===0) return (
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
         <Sec label="Dados do Atleta"/>
@@ -686,6 +722,7 @@ export default function App() {
         {a!==""&&a>18&&<p style={{gridColumn:"1/-1",color:R,fontSize:12,fontWeight:700,margin:0}}>⚠️ Máximo 18 anos.</p>}
         <Inp label="CPF do Atleta" req value={form.cpfAtleta} onChange={v=>sF("cpfAtleta",fmtCPF(v))} placeholder="000.000.000-00" note={(form.cpfAtleta?form.cpfAtleta.replace(/\D/g,"").length:0)+"/11"}/>
         <Inp label="RG do Atleta" value={form.rgAtletaNum} onChange={v=>sF("rgAtletaNum",v)} placeholder="RG para competições"/>
+        <DuplicateNotice matches={dupMatches}/>
         <Inp label="Telefone (WhatsApp)" req value={form.telAtleta} onChange={v=>sF("telAtleta",fmtTel(v))} placeholder="(47) 9xxxx-xxxx"/>
         <Sel label="Posição" value={form.posicao} onChange={v=>sF("posicao",v)} opts={POSICOES}/>
         <Sel label="Categoria" value={form.categoria} onChange={v=>sF("categoria",v)} opts={CATS}/>
@@ -1481,6 +1518,7 @@ export default function App() {
           <Inp label="Data Nasc." type="date" value={editAth.dataNasc} onChange={v=>setEditAth(e=>({...e,dataNasc:v}))}/>
           <Inp label="CPF Atleta" value={editAth.cpfAtleta} onChange={v=>setEditAth(e=>({...e,cpfAtleta:fmtCPF(v)}))}/>
           <Inp label="RG Atleta" value={editAth.rgAtletaNum} onChange={v=>setEditAth(e=>({...e,rgAtletaNum:v}))}/>
+          <DuplicateNotice matches={duplicateAthletes(editAth,editAth.id)}/>
           <Inp label="Tel. Atleta" value={editAth.telAtleta} onChange={v=>setEditAth(e=>({...e,telAtleta:fmtTel(v)}))}/>
           <Inp label="E-mail Atleta" value={editAth.emailAtleta} onChange={v=>setEditAth(e=>({...e,emailAtleta:v}))}/>
           <Sel label="Categoria" value={editAth.categoria} onChange={v=>setEditAth(e=>({...e,categoria:v}))} opts={CATS}/>
@@ -1536,7 +1574,7 @@ export default function App() {
               {renderStep()}
               <div style={{display:"flex",justifyContent:"space-between",marginTop:20,paddingTop:14,borderTop:"1px solid #eee"}}>
                 {step>0?<Btn outline color={N} onClick={()=>setStep(s=>s-1)}>← Anterior</Btn>:<div/>}
-                {step<4?<Btn color={N} disabled={!canNext()} onClick={()=>setStep(s=>s+1)}>Próximo →</Btn>:<Btn color={GR} disabled={!form.termoAceito||!form.imagemAceito} onClick={submit}>✅ Finalizar Cadastro</Btn>}
+                {step<4?<Btn color={N} disabled={!canNext()} onClick={()=>setStep(s=>s+1)}>Próximo →</Btn>:<Btn color={GR} disabled={!form.termoAceito||!form.imagemAceito||hasDuplicateBlock(form)} onClick={submit}>✅ Finalizar Cadastro</Btn>}
               </div>
             </div>
           </div>
