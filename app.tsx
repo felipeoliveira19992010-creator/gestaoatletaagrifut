@@ -665,11 +665,11 @@ export default function App() {
   const updPgto=async(id,status)=>{let changed=null;const nl=pagamentos.map(p=>{if(p.id!==id)return p;changed={...p,status};return changed;});setPagamentos(nl);await sP(nl);if(changed)await addFinHist("Status alterado",changed,status);};
   const delPgto=async id=>{const old=pagamentos.find(p=>p.id===id);const nl=pagamentos.filter(p=>p.id!==id);setPagamentos(nl);await sP(nl);if(old)await addFinHist("Registro removido",old);};
 
-  const handlePresGi=i=>{setPresGi(i);const g=PGROUPS[presProj]?.[i];if(presProj==="Conexão"&&g){setPresCat(g.label);}else if(g&&g.cats.length===1){setPresCat(g.cats[0]);}else{setPresCat("");}};
-  const getPres=(data=presDate)=>presencas.find(p=>p.data===data&&p.proj===presProj&&p.cat===presCat)||{presentes:[]};
-  const presCats=()=>{const g=presGi!==null?(PGROUPS[presProj]||[])[presGi]:null;if(presProj==="Conexão"&&g)return g.cats;return presCat?[presCat]:[];};
+  const handlePresGi=i=>{setPresGi(i);const g=PGROUPS[presProj]?.[i];setPresCat(g?g.label:"");};
+  const presCats=()=>{const g=presGi!==null?(PGROUPS[presProj]||[])[presGi]:null;return g?g.cats:(presCat?[presCat]:[]);};
+  const getPres=(data=presDate)=>{const exact=presencas.find(p=>p.data===data&&p.proj===presProj&&p.cat===presCat);if(exact)return exact;const cats=presCats();const parts=presencas.filter(p=>p.data===data&&p.proj===presProj&&cats.includes(p.cat));return parts.length?{presentes:[...new Set(parts.flatMap(p=>p.presentes||[]))]}:{presentes:[]};};
   const togPres=async aId=>{const cur=getPres();const pres=cur.presentes.includes(aId)?cur.presentes.filter(x=>x!==aId):[...cur.presentes,aId];const ex=presencas.find(p=>p.data===presDate&&p.proj===presProj&&p.cat===presCat);const entry={data:presDate,proj:presProj,cat:presCat,id:Date.now(),presentes:pres};const nl=ex?presencas.map(p=>(p.data===presDate&&p.proj===presProj&&p.cat===presCat)?{...p,presentes:pres}:p):[...presencas,entry];setPresencas(nl);await sPr(nl);};
-  const expPres=()=>{const {start,end,label}=rangePres(presDate,presExpPer);const al=athletes.filter(a=>a.projeto===presProj&&presCats().includes(a.categoria)).sort(sortName);const recDates=presencas.filter(p=>p.proj===presProj&&p.cat===presCat&&p.data>=start&&p.data<=end).map(p=>p.data);const dates=(presExpPer==="dia"?[presDate]:[...new Set(recDates)].sort());const rows=[];dates.forEach(dt=>{const rec=getPres(dt);al.forEach(a=>rows.push([a.nomeAtleta,a.posicao||"",a.categoria,a.projeto,rec.presentes.includes(a.id)?"Presente":"Ausente",fmtD(dt)]));});expCSV([["Nome","Posição","Categoria","Projeto","Presença","Data"],...rows],`presenca_${presProj}_${presCat}_${label}_${start}_${end}.csv`);t2("📊 Planilha baixada!");};
+  const expPres=()=>{const {start,end,label}=rangePres(presDate,presExpPer);const al=athletes.filter(a=>a.projeto===presProj&&presCats().includes(a.categoria)).sort(sortName);const pKeys=[presCat,...presCats()].filter(Boolean);const recDates=presencas.filter(p=>p.proj===presProj&&pKeys.includes(p.cat)&&p.data>=start&&p.data<=end).map(p=>p.data);const dates=(presExpPer==="dia"?[presDate]:[...new Set(recDates)].sort());const rows=[];dates.forEach(dt=>{const rec=getPres(dt);al.forEach(a=>rows.push([a.nomeAtleta,a.posicao||"",a.categoria,a.projeto,rec.presentes.includes(a.id)?"Presente":"Ausente",fmtD(dt)]));});expCSV([["Nome","Posição","Categoria","Projeto","Presença","Data"],...rows],`presenca_${presProj}_${presCat}_${label}_${start}_${end}.csv`);t2("📊 Planilha baixada!");};
 
   const addCamp=async()=>{if(!campF.nome)return;const nl=[...camps,{...campF,id:Date.now(),inscritos:[],eventos:[]}];setCamps(nl);await sC(nl);setShowCamp(false);setCampF({nome:"",data:"",cat:"",proj:""});t2("✅ Campeonato criado!");};
   const delCamp=async id=>{const nl=camps.filter(c=>c.id!==id);setCamps(nl);await sC(nl);setSelCamp(null);};
@@ -946,7 +946,7 @@ export default function App() {
 
   // ── Presença ──────────────────────────────────────────
   const renderPresenca=()=>{
-    const groups=presProj?(PGROUPS[presProj]||[]):[];const selGroup=presGi!==null?groups[presGi]:null;const groupCats=selGroup?selGroup.cats:[];const needCatSel=groupCats.length>1&&presProj!=="Conexão";
+    const groups=presProj?(PGROUPS[presProj]||[]):[];
     const presAlunos=athletes.filter(a=>a.projeto===presProj&&presCats().includes(a.categoria)).sort(sortName);const rec=getPres();
     return (
       <div style={{maxWidth:900,margin:"24px auto",padding:"0 16px"}}>
@@ -969,15 +969,9 @@ export default function App() {
           {presProj&&groups.length>0&&(
             <div>
               <p style={{fontSize:11,fontWeight:700,color:"#64748B",textTransform:"uppercase",margin:"0 0 8px"}}>Turma:</p>
-              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:needCatSel&&presGi!==null?10:0}}>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                 {groups.map((g,i)=><button key={i} onClick={()=>handlePresGi(i)} style={{background:presGi===i?(PC[presProj]||N):(PC[presProj]||N)+"18",color:presGi===i?"white":(PC[presProj]||N),border:`1.5px solid ${(PC[presProj]||N)}55`,borderRadius:8,padding:"6px 14px",cursor:"pointer",fontWeight:700,fontSize:12}}>{g.label}</button>)}
               </div>
-              {needCatSel&&presGi!==null&&(
-                <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>
-                  <p style={{fontSize:11,fontWeight:700,color:"#64748B",textTransform:"uppercase",margin:"0 8px 0 0",alignSelf:"center"}}>Categoria:</p>
-                  {groupCats.map(c=><button key={c} onClick={()=>setPresCat(c)} style={{background:presCat===c?N:N+"10",color:presCat===c?"white":N,border:`1.5px solid ${N}44`,borderRadius:7,padding:"5px 12px",cursor:"pointer",fontWeight:700,fontSize:12}}>{c}</button>)}
-                </div>
-              )}
             </div>
           )}
         </div>
