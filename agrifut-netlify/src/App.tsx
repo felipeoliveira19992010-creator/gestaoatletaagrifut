@@ -650,7 +650,8 @@ export default function App() {
   const quickSubmit=async()=>{if(!canQuickSubmit()){t2("⚠️ Informe nome, data válida e confira CPF/RG duplicado.");return;}await submit();};
 
   const saveEdit=async()=>{const clean=normalizeCadastro(editAth);if(hasDuplicateBlock(clean,editAth.id)){t2("⚠️ CPF ou RG já cadastrado em outro atleta.");return;}const nl=athletes.map(a=>a.id===editAth.id?{...clean,age:ageOf(clean.dataNasc)}:a);setAthletes(nl);await sA(nl);setEditAth(null);t2("✅ Atualizado!");};
-  const doMig=async()=>{const nl=athletes.map(a=>a.id===migAth.id?{...a,categoria:migC||a.categoria,projeto:migP||a.projeto}:a);setAthletes(nl);await sA(nl);setMigAth(null);t2("✅ Migrado!");};
+  const migProjectOptions=()=>user?.role==="professor"?["Academy"]:PROJS;
+  const doMig=async()=>{const nextProj=user?.role==="professor"?"Academy":(migP||migAth.projeto);const nl=athletes.map(a=>a.id===migAth.id?{...a,categoria:migC||a.categoria,projeto:nextProj}:a);setAthletes(nl);await sA(nl);setMigAth(null);t2("✅ Migrado!");};
   const delA=async id=>{if(!confirm("Remover atleta?"))return;const nl=athletes.filter(a=>a.id!==id);setAthletes(nl);await sA(nl);setSelAth(null);};
   const onPaid=async txnCode=>{if(!stripeTarget)return;const updated={...stripeTarget.pgto,status:"Pago",txn:txnCode};const nl=pagamentos.map(p=>p.id===stripeTarget.pgto.id?updated:p);setPagamentos(nl);await sP(nl);await addFinHist("Pagamento confirmado",updated,txnCode);t2("✅ Pagamento confirmado!");setStripeTarget(null);};
 
@@ -674,9 +675,12 @@ export default function App() {
 
   const handlePresGi=i=>{setPresGi(i);const g=PGROUPS[presProj]?.[i];setPresCat(g?g.label:"");};
   const presCats=()=>{const g=presGi!==null?(PGROUPS[presProj]||[])[presGi]:null;return g?g.cats:(presCat?[presCat]:[]);};
-  const getPres=(data=presDate)=>{const exact=presencas.find(p=>p.data===data&&p.proj===presProj&&p.cat===presCat);if(exact)return exact;const cats=presCats();const parts=presencas.filter(p=>p.data===data&&p.proj===presProj&&cats.includes(p.cat));return parts.length?{presentes:[...new Set(parts.flatMap(p=>p.presentes||[]))]}:{presentes:[]};};
-  const togPres=async aId=>{const cur=getPres();const pres=cur.presentes.includes(aId)?cur.presentes.filter(x=>x!==aId):[...cur.presentes,aId];const ex=presencas.find(p=>p.data===presDate&&p.proj===presProj&&p.cat===presCat);const entry={data:presDate,proj:presProj,cat:presCat,id:Date.now(),presentes:pres};const nl=ex?presencas.map(p=>(p.data===presDate&&p.proj===presProj&&p.cat===presCat)?{...p,presentes:pres}:p):[...presencas,entry];setPresencas(nl);await sPr(nl);};
-  const expPres=()=>{const {start,end,label}=rangePres(presDate,presExpPer);const al=athletes.filter(a=>a.projeto===presProj&&presCats().includes(a.categoria)).sort(sortName);const pKeys=[presCat,...presCats()].filter(Boolean);const recDates=presencas.filter(p=>p.proj===presProj&&pKeys.includes(p.cat)&&p.data>=start&&p.data<=end).map(p=>p.data);const dates=(presExpPer==="dia"?[presDate]:[...new Set(recDates)].sort());const rows=[];dates.forEach(dt=>{const rec=getPres(dt);al.forEach(a=>rows.push([a.nomeAtleta,a.posicao||"",a.categoria,a.projeto,rec.presentes.includes(a.id)?"Presente":"Ausente",fmtD(dt)]));});expCSV([["Nome","Posição","Categoria","Projeto","Presença","Data"],...rows],`presenca_${presProj}_${presCat}_${label}_${start}_${end}.csv`);t2("📊 Planilha baixada!");};
+  const normPresRec=r=>{const presentes=[...new Set((r?.presentes||[]).map(Number))];const justificadas=[...new Set((r?.justificadas||[]).map(Number))].filter(id=>!presentes.includes(id));return{...(r||{}),presentes,justificadas};};
+  const getPres=(data=presDate)=>{const exact=presencas.find(p=>p.data===data&&p.proj===presProj&&p.cat===presCat);if(exact)return normPresRec(exact);const cats=presCats();const parts=presencas.filter(p=>p.data===data&&p.proj===presProj&&cats.includes(p.cat));return parts.length?normPresRec({presentes:parts.flatMap(p=>p.presentes||[]),justificadas:parts.flatMap(p=>p.justificadas||[])}):{presentes:[],justificadas:[]};};
+  const savePres=async(pres,just)=>{const ex=presencas.find(p=>p.data===presDate&&p.proj===presProj&&p.cat===presCat);const entry={data:presDate,proj:presProj,cat:presCat,id:ex?.id||Date.now(),presentes:pres,justificadas:just};const nl=ex?presencas.map(p=>(p.data===presDate&&p.proj===presProj&&p.cat===presCat)?{...p,presentes:pres,justificadas:just}:p):[...presencas,entry];setPresencas(nl);await sPr(nl);};
+  const togPres=async aId=>{const cur=getPres();const ja=cur.presentes.includes(aId);const pres=ja?cur.presentes.filter(x=>x!==aId):[...cur.presentes,aId];const just=ja?cur.justificadas:cur.justificadas.filter(x=>x!==aId);await savePres(pres,just);};
+  const togJustPres=async aId=>{const cur=getPres();const ja=cur.justificadas.includes(aId);const just=ja?cur.justificadas.filter(x=>x!==aId):[...cur.justificadas,aId];const pres=cur.presentes.filter(x=>x!==aId);await savePres(pres,just);};
+  const expPres=()=>{const {start,end,label}=rangePres(presDate,presExpPer);const al=athletes.filter(a=>a.projeto===presProj&&presCats().includes(a.categoria)).sort(sortName);const pKeys=[presCat,...presCats()].filter(Boolean);const recDates=presencas.filter(p=>p.proj===presProj&&pKeys.includes(p.cat)&&p.data>=start&&p.data<=end).map(p=>p.data);const dates=(presExpPer==="dia"?[presDate]:[...new Set(recDates)].sort());const rows=[];dates.forEach(dt=>{const rec=getPres(dt);al.forEach(a=>rows.push([a.nomeAtleta,a.posicao||"",a.categoria,a.projeto,rec.presentes.includes(a.id)?"Presente":rec.justificadas.includes(a.id)?"Falta justificada":"Ausente",fmtD(dt)]));});expCSV([["Nome","Posição","Categoria","Projeto","Presença","Data"],...rows],`presenca_${presProj}_${presCat}_${label}_${start}_${end}.csv`);t2("📊 Planilha baixada!");};
 
   const addCamp=async()=>{if(user?.role!=="admin"||!campF.nome)return;const nl=[...camps,{...campF,id:Date.now(),inscritos:[],eventos:[]}];setCamps(nl);await sC(nl);setShowCamp(false);setCampF({nome:"",data:"",cat:"",proj:""});t2("✅ Campeonato criado!");};
   const delCamp=async id=>{if(user?.role!=="admin")return;const nl=camps.filter(c=>c.id!==id);setCamps(nl);await sC(nl);setSelCamp(null);};
@@ -737,7 +741,7 @@ export default function App() {
   const eligibleForCamp=camp=>{const mx=catN(camp.cat);return athletes.filter(a=>(!camp.proj||a.projeto===camp.proj)&&(!camp.cat||catN(a.categoria)<=mx));};
   const canMig=user&&(user.role==="admin"||user.role==="professor");
   const doWA=a=>waOpen("55"+a.telResp.replace(/\D/g,""),`Olá ${a.nomeResp}! Contato Agrifut 🟡⚫`);
-  const doMigOpen=a=>{setMigAth(a);setMigC(a.categoria||"");setMigP(a.projeto||"");};
+  const doMigOpen=a=>{setMigAth(a);setMigC(a.categoria||"");setMigP(user?.role==="professor"?"Academy":(a.projeto||""));};
 
   // ── Form Steps ────────────────────────────────────────
   const STEPS=[{icon:"⚽",label:"Atleta"},{icon:"👤",label:"Responsável"},{icon:"📁",label:"Docs"},{icon:"🏥",label:"Saúde"},{icon:"📝",label:"Termo"}];
@@ -957,6 +961,9 @@ export default function App() {
   const renderPresenca=()=>{
     const groups=presProj?(PGROUPS[presProj]||[]):[];
     const presAlunos=athletes.filter(a=>a.projeto===presProj&&presCats().includes(a.categoria)).sort(sortName);const rec=getPres();
+    const presCount=presAlunos.filter(a=>rec.presentes.includes(a.id)).length;
+    const justCount=presAlunos.filter(a=>rec.justificadas.includes(a.id)).length;
+    const faltCount=Math.max(0,presAlunos.length-presCount-justCount);
     return (
       <div style={{maxWidth:900,margin:"24px auto",padding:"0 16px"}}>
         <div style={{background:"white",borderRadius:14,padding:18,marginBottom:14,boxShadow:"0 2px 8px #0001"}}>
@@ -989,11 +996,11 @@ export default function App() {
           :(
             <div style={{background:"white",borderRadius:14,padding:18,boxShadow:"0 2px 8px #0001"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
-                <div><p style={{fontWeight:800,fontSize:15,color:N,margin:0}}>{presProj} — {presCat} · {fmtD(presDate)}</p><p style={{fontSize:12,color:"#64748B",margin:0}}>{rec.presentes.length}/{presAlunos.length} · ordem alfabética</p></div>
-                <div style={{display:"flex",gap:6}}><Badge text={"✅ "+rec.presentes.length} color="#059669"/><Badge text={"❌ "+(presAlunos.length-rec.presentes.length)} color={R}/></div>
+                <div><p style={{fontWeight:800,fontSize:15,color:N,margin:0}}>{presProj} — {presCat} · {fmtD(presDate)}</p><p style={{fontSize:12,color:"#64748B",margin:0}}>{presCount}/{presAlunos.length} presentes · {justCount} justificadas · ordem alfabética</p></div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}><Badge text={"✅ "+presCount} color="#059669"/><Badge text={"🟡 "+justCount} color={OR}/><Badge text={"❌ "+faltCount} color={R}/></div>
               </div>
               {presAlunos.length===0?<p style={{color:"#888",textAlign:"center",padding:24}}>Nenhum atleta nesta turma.</p>
-                :<div style={{display:"grid",gap:8}}>{presAlunos.map(a=>{const pr=rec.presentes.includes(a.id);return <div key={a.id} onClick={()=>togPres(a.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:10,cursor:"pointer",background:pr?"#F0FFF4":"#FFF9F9",border:`2px solid ${pr?"#86EFAC":R+"44"}`,transition:"all .15s"}}><div style={{width:36,height:36,borderRadius:8,overflow:"hidden",background:N,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{a.foto?<img src={a.foto} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{color:G,fontWeight:800}}>{a.nomeAtleta?a.nomeAtleta[0]:"?"}</span>}</div><div style={{flex:1}}><span style={{fontWeight:700,fontSize:14,color:N}}>{a.nomeAtleta}</span>{a.posicao&&<span style={{fontSize:12,color:"#64748B"}}> · {a.posicao}</span>}</div><span style={{fontSize:22}}>{pr?"✅":"⬜"}</span></div>;})}</div>}
+                :<div style={{display:"grid",gap:8}}>{presAlunos.map(a=>{const pr=rec.presentes.includes(a.id);const fj=rec.justificadas.includes(a.id);const bg=pr?"#F0FFF4":fj?"#FFFBEB":"#FFF9F9";const bc=pr?"#86EFAC":fj?OR+"66":R+"44";return <div key={a.id} onClick={()=>togPres(a.id)} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:10,cursor:"pointer",background:bg,border:`2px solid ${bc}`,transition:"all .15s",flexWrap:"wrap"}}><div style={{width:36,height:36,borderRadius:8,overflow:"hidden",background:N,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>{a.foto?<img src={a.foto} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:<span style={{color:G,fontWeight:800}}>{a.nomeAtleta?a.nomeAtleta[0]:"?"}</span>}</div><div style={{flex:1,minWidth:180}}><span style={{fontWeight:700,fontSize:14,color:N}}>{a.nomeAtleta}</span>{a.posicao&&<span style={{fontSize:12,color:"#64748B"}}> · {a.posicao}</span>}</div><button onClick={e=>{e.stopPropagation();togJustPres(a.id);}} style={{background:fj?OR:"#F8FAFC",color:fj?"white":OR,border:`1.5px solid ${OR}`,borderRadius:8,padding:"6px 10px",cursor:"pointer",fontWeight:800,fontSize:12,whiteSpace:"nowrap"}}>Falta justificada</button><span style={{fontSize:22,minWidth:26,textAlign:"center"}}>{pr?"✅":fj?"🟡":"⬜"}</span></div>;})}</div>}
             </div>
           )}
       </div>
@@ -1571,8 +1578,8 @@ export default function App() {
           <Btn color={GR} small onClick={()=>waOpen("55"+a.telResp.replace(/\D/g,""),`Olá ${a.nomeResp}! Contato Agrifut 🟡⚫`)}>📲 WhatsApp</Btn>
           {docsMsg&&<Btn color="#059669" small onClick={()=>waOpen("55"+a.telResp.replace(/\D/g,""),docsMsg)}>📋 Enviar Docs Pendentes</Btn>}
           <Btn color={N} small onClick={()=>setSigTarget(a)}>📄 Gerar PDF</Btn>
+          {canMig&&<Btn color={OR} small onClick={()=>{doMigOpen(a);setSelAth(null);}}>🔄 Migrar</Btn>}
           {user&&user.role==="admin"&&<>
-            <Btn color={OR} small onClick={()=>{setMigAth(a);setMigC(a.categoria||"");setMigP(a.projeto||"");setSelAth(null);}}>🔄 Migrar</Btn>
             <Btn color={N} small onClick={()=>{setEditAth({...a});setSelAth(null);}}>✏️ Editar</Btn>
             <Btn color={R} small onClick={()=>delA(a.id)}>🗑 Remover</Btn>
           </>}
@@ -1631,7 +1638,7 @@ export default function App() {
       {stripeTarget&&<PayModal pgto={stripeTarget.pgto} atleta={stripeTarget.atleta} onSuccess={onPaid} onClose={()=>setStripeTarget(null)}/>}
       {sigTarget&&<SignaturePad onSave={sig=>{setPdfTarget({atleta:sigTarget,sig});setSigTarget(null);}} onClose={()=>setSigTarget(null)}/>}
       {pdfTarget&&<PDFModal atleta={pdfTarget.atleta} sig={pdfTarget.sig} onClose={()=>setPdfTarget(null)}/>}
-      {migAth&&<Modal title="🔄 Migrar" onClose={()=>setMigAth(null)}><p style={{fontSize:14,marginBottom:14}}>Alterando: <strong>{migAth.nomeAtleta}</strong></p><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}><Sel label="Nova Categoria" value={migC} onChange={setMigC} opts={CATS}/><Sel label="Novo Projeto" value={migP} onChange={setMigP} opts={PROJS}/></div><div style={{display:"flex",gap:10}}><Btn color={N} onClick={doMig}>✅ Confirmar</Btn><Btn outline color="#888" onClick={()=>setMigAth(null)}>Cancelar</Btn></div></Modal>}
+      {migAth&&<Modal title="🔄 Migrar" onClose={()=>setMigAth(null)}><p style={{fontSize:14,marginBottom:14}}>Alterando: <strong>{migAth.nomeAtleta}</strong></p><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}><Sel label="Nova Categoria" value={migC} onChange={setMigC} opts={CATS}/><Sel label="Novo Projeto" value={migP} onChange={setMigP} opts={migProjectOptions()}/></div>{user?.role==="professor"&&<p style={{fontSize:12,color:"#64748B",margin:"-8px 0 14px"}}>Professor pode migrar atleta para o projeto Academy.</p>}<div style={{display:"flex",gap:10}}><Btn color={N} onClick={doMig}>✅ Confirmar</Btn><Btn outline color="#888" onClick={()=>setMigAth(null)}>Cancelar</Btn></div></Modal>}
       {editAth&&<Modal title="✏️ Editar Atleta" onClose={()=>setEditAth(null)} wide>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}>
           <Sec label="Dados do Atleta"/>
