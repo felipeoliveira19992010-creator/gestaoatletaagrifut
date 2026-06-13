@@ -698,8 +698,8 @@ export default function App() {
   const quickSubmit=async()=>{if(!canQuickSubmit()){t2("⚠️ Informe nome, data válida e confira CPF/RG duplicado.");return;}await submit();};
 
   const saveEdit=async()=>{const clean=normalizeCadastro(editAth);if(hasDuplicateBlock(clean,editAth.id)){t2("⚠️ CPF ou RG já cadastrado em outro atleta.");return;}const nl=athletes.map(a=>a.id===editAth.id?{...clean,age:ageOf(clean.dataNasc)}:a);setAthletes(nl);await sA(nl);setEditAth(null);t2("✅ Atualizado!");};
-  const migProjectOptions=()=>user?.role==="professor"?["Academy"]:PROJS;
-  const doMig=async()=>{const nextProj=user?.role==="professor"?"Academy":(migP||migAth.projeto);const nl=athletes.map(a=>a.id===migAth.id?{...a,categoria:migC||a.categoria,projeto:nextProj}:a);setAthletes(nl);await sA(nl);setMigAth(null);t2("✅ Migrado!");};
+  const migProjectOptions=()=>user?.role==="professor"?["Rendimento","Academy"]:PROJS;
+  const doMig=async()=>{const opts=migProjectOptions();const nextProj=user?.role==="professor"?(opts.includes(migP)?migP:"Academy"):(migP||migAth.projeto);const nl=athletes.map(a=>a.id===migAth.id?{...a,categoria:migC||a.categoria,projeto:nextProj}:a);setAthletes(nl);await sA(nl);setMigAth(null);t2("✅ Migrado!");};
   const delA=async id=>{if(!confirm("Remover atleta?"))return;const nl=athletes.filter(a=>a.id!==id);setAthletes(nl);await sA(nl);setSelAth(null);};
   const onPaid=async txnCode=>{if(!stripeTarget)return;const updated={...stripeTarget.pgto,status:"Pago",txn:txnCode};const nl=pagamentos.map(p=>p.id===stripeTarget.pgto.id?updated:p);setPagamentos(nl);await sP(nl);await addFinHist("Pagamento confirmado",updated,txnCode);t2("✅ Pagamento confirmado!");setStripeTarget(null);};
 
@@ -789,7 +789,7 @@ export default function App() {
   const eligibleForCamp=camp=>{const mx=catN(camp.cat);return athletes.filter(a=>(!camp.proj||a.projeto===camp.proj)&&(!camp.cat||catN(a.categoria)<=mx));};
   const canMig=user&&(user.role==="admin"||user.role==="professor");
   const doWA=a=>waOpen("55"+a.telResp.replace(/\D/g,""),`Olá ${a.nomeResp}! Contato Agrifut 🟡⚫`);
-  const doMigOpen=a=>{setMigAth(a);setMigC(a.categoria||"");setMigP(user?.role==="professor"?"Academy":(a.projeto||""));};
+  const doMigOpen=a=>{setMigAth(a);setMigC(a.categoria||"");const opts=user?.role==="professor"?["Rendimento","Academy"]:PROJS;setMigP(opts.includes(a.projeto)?a.projeto:(user?.role==="professor"?"Academy":(a.projeto||"")));};
 
   // ── Form Steps ────────────────────────────────────────
   const STEPS=[{icon:"⚽",label:"Atleta"},{icon:"👤",label:"Responsável"},{icon:"📁",label:"Docs"},{icon:"🏥",label:"Saúde"},{icon:"📝",label:"Termo"}];
@@ -1719,7 +1719,7 @@ export default function App() {
       {stripeTarget&&<PayModal pgto={stripeTarget.pgto} atleta={stripeTarget.atleta} onSuccess={onPaid} onClose={()=>setStripeTarget(null)}/>}
       {sigTarget&&<SignaturePad onSave={sig=>{setPdfTarget({atleta:sigTarget,sig});setSigTarget(null);}} onClose={()=>setSigTarget(null)}/>}
       {pdfTarget&&<PDFModal atleta={pdfTarget.atleta} sig={pdfTarget.sig} onClose={()=>setPdfTarget(null)}/>}
-      {migAth&&<Modal title="🔄 Migrar" onClose={()=>setMigAth(null)}><p style={{fontSize:14,marginBottom:14}}>Alterando: <strong>{migAth.nomeAtleta}</strong></p><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}><Sel label="Nova Categoria" value={migC} onChange={setMigC} opts={CATS}/><Sel label="Novo Projeto" value={migP} onChange={setMigP} opts={migProjectOptions()}/></div>{user?.role==="professor"&&<p style={{fontSize:12,color:"#64748B",margin:"-8px 0 14px"}}>Professor pode migrar atleta para o projeto Academy.</p>}<div style={{display:"flex",gap:10}}><Btn color={N} onClick={doMig}>✅ Confirmar</Btn><Btn outline color="#888" onClick={()=>setMigAth(null)}>Cancelar</Btn></div></Modal>}
+      {migAth&&<Modal title="🔄 Migrar" onClose={()=>setMigAth(null)}><p style={{fontSize:14,marginBottom:14}}>Alterando: <strong>{migAth.nomeAtleta}</strong></p><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}><Sel label="Nova Categoria" value={migC} onChange={setMigC} opts={CATS}/><Sel label="Novo Projeto" value={migP} onChange={setMigP} opts={migProjectOptions()}/></div>{user?.role==="professor"&&<p style={{fontSize:12,color:"#64748B",margin:"-8px 0 14px"}}>Professor pode migrar atleta entre Academy e Rendimento.</p>}<div style={{display:"flex",gap:10}}><Btn color={N} onClick={doMig}>✅ Confirmar</Btn><Btn outline color="#888" onClick={()=>setMigAth(null)}>Cancelar</Btn></div></Modal>}
       {editAth&&<Modal title="✏️ Editar Atleta" onClose={()=>setEditAth(null)} wide>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}>
           <Sec label="Dados do Atleta"/>
