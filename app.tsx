@@ -4,13 +4,24 @@ import { createRoot } from "react-dom/client";
 import "./storage.js";
 
 const LOGO_SRC = "logo.png";
+const PROJECT_LOGOS = { Academy:"academy-logo.png", "Conexão":"conexao-logo.png" };
+const SESSION_KEY = "agrifut-login-session-v1";
+const SESSION_TTL_MS = 3 * 60 * 60 * 1000;
 const getLogoSrc = () => new URL(LOGO_SRC, window.location.href).href;
+const readLoginSession = () => {try{return JSON.parse(localStorage.getItem(SESSION_KEY)||"null");}catch(e){return null;}};
+const saveLoginSession = (user,tab,loginAt=Date.now()) => {try{if(user&&user.role!=="publico")localStorage.setItem(SESSION_KEY,JSON.stringify({user,tab,loginAt}));}catch(e){}};
+const clearLoginSession = () => {try{localStorage.removeItem(SESSION_KEY);}catch(e){}};
 
 // ── Logo ─────────────────────────────────────────────────
 function AgrifutLogo({size=48}:{size?:number}) {
   return (
     <img src={LOGO_SRC} alt="Agrifut Itajaí EC" style={{width:size,height:size,objectFit:"contain",display:"block"}}/>
   );
+}
+function ProjectLogo({project,size=48}:{project:string,size?:number}) {
+  const src=PROJECT_LOGOS[project];
+  if(!src) return <AgrifutLogo size={size}/>;
+  return <span style={{width:size,height:size,borderRadius:12,background:project==="Academy"?N:"white",display:"inline-flex",alignItems:"center",justifyContent:"center",overflow:"hidden",boxShadow:"0 2px 8px #0002",flexShrink:0}}><img src={src} alt={project} style={{width:"100%",height:"100%",objectFit:"contain",display:"block"}}/></span>;
 }
 
 // ── Constants ────────────────────────────────────────────
@@ -71,6 +82,7 @@ const fmtR = v => v ? `R$ ${Number(v).toFixed(2).replace(".",",")}` : "-";
 const normTxt = v => String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().trim();
 const onlyDigits = v => String(v||"").replace(/\D/g,"");
 const normDoc = v => onlyDigits(v) || normTxt(v).replace(/[^a-z0-9]/g,"");
+const safeFileName = v => normTxt(v).replace(/[^a-z0-9]+/g,"_").replace(/^_+|_+$/g,"")||"arquivo";
 const categoryByBirth = d => { const a=Number(ageOf(d)); return a>=6&&a<=18?`Sub-${a}`:""; };
 const LOWER_NAME_WORDS = new Set(["da","de","do","das","dos","e"]);
 const capNamePart = w => w?w.charAt(0).toLocaleUpperCase("pt-BR")+w.slice(1):w;
@@ -165,7 +177,7 @@ const docAttachmentStyles = `@page{size:A4;margin:10mm}.doc-page{page-break-befo
 const generatePDF = (a, sig) => {
   const docs=[{l:"RG Atleta",ok:!!a.rgAtleta},{l:"RG Responsável",ok:!!a.rgResp},{l:"Comp. Residência",ok:!!a.comprResid},{l:"Laudo Médico",ok:!!a.laudo}];
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ficha — ${a.nomeAtleta}</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:28px;color:#1E293B;font-size:13px}
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Roboto,Arial,sans-serif;padding:28px;color:#1E293B;font-size:13px}
 .hdr{display:flex;align-items:center;gap:16px;margin-bottom:20px;border-bottom:3px solid #F5C518;padding-bottom:14px}
 .logo{width:58px;height:58px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.logo img{width:100%;height:100%;object-fit:contain;display:block}
 h1{font-size:20px;color:#1B2A4A}
@@ -267,6 +279,36 @@ function Modal({title,onClose,children,wide}) {
       </div>
     </div>
   );
+}
+function GlobalAppStyles() {
+  return <style>{`
+    body, button, input, select, textarea { font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .agrifut-app-shell { font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .project-grid { align-items: stretch; }
+    .project-logo-card img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    @media (max-width: 720px) {
+      .agrifut-app-shell { background: #F8FAFC; }
+      .agrifut-header-inner { align-items: stretch !important; }
+      .agrifut-tabs { display: grid !important; grid-template-columns: repeat(2,minmax(0,1fr)) !important; width: 100%; }
+      .agrifut-tabs button { width: 100%; min-height: 36px; }
+      .project-grid,
+      div[style*="grid-template-columns: 1fr 1fr 1fr"],
+      div[style*="grid-template-columns: repeat(3, 1fr)"] { grid-template-columns: 1fr !important; }
+      div[style*="grid-template-columns: 1fr 1fr"],
+      div[style*="grid-template-columns: repeat(4, 1fr)"] { grid-template-columns: 1fr !important; }
+      div[style*="max-width: 1100px"],
+      div[style*="max-width: 900px"],
+      div[style*="max-width: 800px"],
+      div[style*="max-width: 700px"] { padding-left: 12px !important; padding-right: 12px !important; margin-top: 14px !important; }
+      div[style*="padding: 18px"] { padding: 14px !important; }
+      table { font-size: 12px; }
+    }
+    @media (max-width: 480px) {
+      .agrifut-tabs { grid-template-columns: 1fr !important; }
+      button { min-height: 34px; }
+      input, select, textarea { min-width: 0 !important; }
+    }
+  `}</style>;
 }
 function FilePick({label,file,onChange,note}) {
   return (
@@ -552,7 +594,11 @@ export default function App() {
       const urlToken=getTokenFromURL();
       if(urlToken){
         const at=aths.find(x=>x.token===urlToken);
-        if(at){setUser({role:"atleta",id:at.id,nome:at.nomeAtleta});setTab("portal");}
+        if(at){const nextUser={role:"atleta",id:at.id,nome:at.nomeAtleta};setUser(nextUser);setTab("portal");saveLoginSession(nextUser,"portal");}
+      }else{
+        const saved=readLoginSession();
+        if(saved?.user&&saved?.loginAt&&Date.now()-saved.loginAt<SESSION_TTL_MS){setUser(saved.user);setTab(saved.tab||saved.user.tab||"athletes");}
+        else clearLoginSession();
       }
       setLoading(false);
     })();
@@ -575,7 +621,9 @@ export default function App() {
     setFinHist(nl);await sFH(nl);
   };
 
-  const handleLogin=({role,id,nome,tab:t,...rest})=>{setUser({role,id,nome,...rest});setTab(t||"athletes");};
+  const handleLogin=({role,id,nome,tab:t,...rest})=>{const nextUser={role,id,nome,...rest};const nextTab=t||"athletes";setUser(nextUser);setTab(nextTab);saveLoginSession(nextUser,nextTab);};
+  const logout=()=>{clearLoginSession();setUser(null);setNewAthToken("");};
+  useEffect(()=>{if(!user||user.role==="publico")return;const saved=readLoginSession();const loginAt=saved?.loginAt||Date.now();saveLoginSession(user,tab,loginAt);const left=SESSION_TTL_MS-(Date.now()-loginAt);if(left<=0){logout();return;}const timer=setTimeout(logout,left);return()=>clearTimeout(timer);},[user,tab]);
   const duplicateAthletes=(draft,ignoreId=null)=>{
     const cpf=onlyDigits(draft?.cpfAtleta);
     const rg=normDoc(draft?.rgAtletaNum);
@@ -863,8 +911,8 @@ export default function App() {
           </p>
         </div>
         <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
-          <Btn color={N} onClick={()=>{setNewAthToken("");setTab("athletes");}}>📋 Ver Atletas</Btn>
-          <Btn color={G} onClick={()=>{setNewAthToken("");setStep(0);}}>➕ Novo Cadastro</Btn>
+          <Btn color={N} onClick={()=>{setNewAthToken("");setTab("athletes");}}>Ver Atletas</Btn>
+          <Btn color={G} onClick={()=>{setNewAthToken("");setStep(0);}}>Novo Cadastro</Btn>
         </div>
       </div>
     </div>
@@ -918,7 +966,7 @@ export default function App() {
     if(projV==="semProjeto"){const list=listAll(a=>!a.projeto);return <div style={{maxWidth:1100,margin:"24px auto",padding:"0 16px"}}>{searchBar(<><span style={{fontWeight:800,color:"#64748B",fontSize:15}}>Sem projeto</span><Badge text={list.length+" atleta(s)"} color="#64748B"/></>)}{filterPanel}{athList(list)}</div>;}
     if(projV&&projV!=="all"){
       const {p,gi}=projV;const grps=PGROUPS[p]||[];const activeCats=gi!==null?grps[gi].cats:grps.flatMap(g=>g.cats);const projColor=PC[p]||"#888";
-      return (<div style={{maxWidth:1100,margin:"24px auto",padding:"0 16px"}}>{searchBar(<><span style={{fontWeight:800,color:projColor,fontSize:15}}>{p}</span>{grps.map((g,i)=><button key={i} onClick={()=>setProjV({p,gi:gi===i?null:i})} style={{background:gi===i?projColor:projColor+"18",color:gi===i?"white":projColor,border:`1.5px solid ${projColor}55`,borderRadius:7,padding:"4px 10px",cursor:"pointer",fontWeight:700,fontSize:11}}>{g.label}</button>)}</>)}{athList(baseList(a=>a.projeto===p&&activeCats.includes(a.categoria)))}</div>);
+      return (<div style={{maxWidth:1100,margin:"24px auto",padding:"0 16px"}}>{searchBar(<><ProjectLogo project={p} size={30}/><span style={{fontWeight:800,color:projColor,fontSize:15}}>{p}</span>{grps.map((g,i)=><button key={i} onClick={()=>setProjV({p,gi:gi===i?null:i})} style={{background:gi===i?projColor:projColor+"18",color:gi===i?"white":projColor,border:`1.5px solid ${projColor}55`,borderRadius:7,padding:"4px 10px",cursor:"pointer",fontWeight:700,fontSize:11}}>{g.label}</button>)}</>)}{athList(baseList(a=>a.projeto===p&&activeCats.includes(a.categoria)))}</div>);
     }
     const homeList=listAll(()=>true);
     return (
@@ -938,16 +986,16 @@ export default function App() {
           </div>
         )}
         <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
-          <button onClick={()=>{setProjV("all");setSrch("");}} style={{background:N,color:G,border:"none",borderRadius:10,padding:"10px 20px",fontWeight:800,fontSize:14,cursor:"pointer"}}>👥 Todos ({athletes.length})</button>
-          {athletes.filter(a=>!a.projeto).length>0&&<button onClick={()=>{setFAProj("all");setProjV("semProjeto");}} style={{background:"#F1F5F9",color:"#64748B",border:"2px solid #E2E8F0",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer"}}>⚠️ Sem projeto: {athletes.filter(a=>!a.projeto).length}</button>}
+          <button onClick={()=>{setProjV("all");setSrch("");}} style={{background:N,color:G,border:"none",borderRadius:10,padding:"10px 20px",fontWeight:800,fontSize:14,cursor:"pointer"}}>Todos ({athletes.length})</button>
+          {athletes.filter(a=>!a.projeto).length>0&&<button onClick={()=>{setFAProj("all");setProjV("semProjeto");}} style={{background:"#F1F5F9",color:"#64748B",border:"2px solid #E2E8F0",borderRadius:10,padding:"10px 18px",fontWeight:700,fontSize:13,cursor:"pointer"}}>Sem projeto: {athletes.filter(a=>!a.projeto).length}</button>}
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:20}}>
+        <div className="project-grid" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:20}}>
           {PROJS.map(p=>{
             const cnt=athletes.filter(a=>a.projeto===p).length;const grps=PGROUPS[p]||[];const projColor=PC[p]||"#888";
             return (
               <div key={p} style={{background:"white",borderRadius:16,overflow:"hidden",boxShadow:"0 2px 12px #0001",border:`2px solid ${projColor}22`,cursor:"pointer",transition:"all .15s"}}
                 onMouseEnter={e=>{e.currentTarget.style.borderColor=projColor;}} onMouseLeave={e=>{e.currentTarget.style.borderColor=projColor+"22";}} onClick={()=>setProjV({p,gi:null})}>
-                <div style={{background:projColor,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between"}}><span style={{color:"white",fontWeight:800,fontSize:18}}>{p}</span><span style={{color:"white",fontSize:32,fontWeight:900}}>{cnt}</span></div>
+                <div style={{background:projColor,padding:"14px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}><div style={{display:"flex",alignItems:"center",gap:10,minWidth:0}}><ProjectLogo project={p} size={44}/><span style={{color:"white",fontWeight:800,fontSize:18,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p}</span></div><span style={{color:"white",fontSize:32,fontWeight:900}}>{cnt}</span></div>
                 <div style={{padding:10,display:"flex",flexWrap:"wrap",gap:5}} onClick={e=>e.stopPropagation()}>
                   {grps.map((g,i)=>{const gc=athletes.filter(a=>a.projeto===p&&g.cats.includes(a.categoria)).length;return <button key={i} onClick={()=>setProjV({p,gi:i})} style={{background:projColor+"15",color:projColor,border:`1.5px solid ${projColor}55`,borderRadius:7,padding:"4px 9px",cursor:"pointer",fontWeight:700,fontSize:11}}>{g.label} ({gc})</button>;})}
                 </div>
@@ -969,7 +1017,7 @@ export default function App() {
     return (
       <div style={{maxWidth:900,margin:"24px auto",padding:"0 16px"}}>
         <div style={{background:"white",borderRadius:14,padding:18,marginBottom:14,boxShadow:"0 2px 8px #0001"}}>
-          <p style={{fontWeight:800,fontSize:14,color:N,margin:"0 0 12px"}}>📅 Selecionar Turma</p>
+          <p style={{fontWeight:800,fontSize:14,color:N,margin:"0 0 12px"}}>Selecionar Turma</p>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:12,alignItems:"flex-end",marginBottom:presProj?12:0}}>
             <Sel label="Projeto" value={presProj} onChange={v=>{setPresProj(v);setPresGi(null);setPresCat("");}} opts={user&&user.role==="professor"&&user.proj?[user.proj]:PROJS}/>
             <Inp label="Data" type="date" value={presDate} onChange={setPresDate}/>
@@ -1015,7 +1063,7 @@ export default function App() {
       {user&&user.role==="admin"&&<div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}><Btn color={G} onClick={()=>setShowCamp(true)}>+ Novo Campeonato</Btn></div>}
       {camps.length===0?<div style={{background:"white",borderRadius:14,padding:48,textAlign:"center",boxShadow:"0 2px 8px #0001"}}><p style={{fontSize:40,margin:0}}>🏆</p><p style={{color:"#888",fontWeight:600}}>Nenhum campeonato</p></div>
         :<div style={{display:"grid",gap:12}}>{camps.map(c=><div key={c.id} style={{background:"white",borderRadius:14,overflow:"hidden",boxShadow:"0 2px 8px #0001"}}><div style={{background:N,padding:"13px 18px",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}><span style={{fontSize:22}}>🏆</span><div style={{flex:1}}><p style={{color:"white",fontWeight:800,fontSize:15,margin:0}}>{c.nome}</p><p style={{color:G,fontSize:12,margin:0}}>{fmtD(c.data)}{c.cat?" · "+c.cat:""}{c.proj?" · "+c.proj:""}</p></div><Badge text={"📋 "+c.inscritos.length} color={G}/><Badge text={"⚽ "+(c.eventos||[]).length+" eventos"} color="#86EFAC"/><Btn small color={G} onClick={()=>setSelCamp(c)}>Gerenciar</Btn>{user&&user.role==="admin"&&<Btn small color={R} outline onClick={()=>delCamp(c.id)}>🗑</Btn>}</div></div>)}</div>}
-      {showCamp&&<Modal title="➕ Novo Campeonato" onClose={()=>setShowCamp(false)}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}><Inp label="Nome" req value={campF.nome} onChange={v=>setCampF(f=>({...f,nome:v}))} full/><Inp label="Data" type="date" value={campF.data} onChange={v=>setCampF(f=>({...f,data:v}))}/><Sel label="Categoria máx." value={campF.cat} onChange={v=>setCampF(f=>({...f,cat:v}))} opts={CATS}/><Sel label="Projeto" value={campF.proj} onChange={v=>setCampF(f=>({...f,proj:v}))} opts={PROJS}/></div><div style={{display:"flex",gap:10}}><Btn color={N} disabled={!campF.nome} onClick={addCamp}>✅ Criar</Btn><Btn outline color="#888" onClick={()=>setShowCamp(false)}>Cancelar</Btn></div></Modal>}
+      {showCamp&&<Modal title="Novo Campeonato" onClose={()=>setShowCamp(false)}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}><Inp label="Nome" req value={campF.nome} onChange={v=>setCampF(f=>({...f,nome:v}))} full/><Inp label="Data" type="date" value={campF.data} onChange={v=>setCampF(f=>({...f,data:v}))}/><Sel label="Categoria máx." value={campF.cat} onChange={v=>setCampF(f=>({...f,cat:v}))} opts={CATS}/><Sel label="Projeto" value={campF.proj} onChange={v=>setCampF(f=>({...f,proj:v}))} opts={PROJS}/></div><div style={{display:"flex",gap:10}}><Btn color={N} disabled={!campF.nome} onClick={addCamp}>✅ Criar</Btn><Btn outline color="#888" onClick={()=>setShowCamp(false)}>Cancelar</Btn></div></Modal>}
       {selCamp&&(()=>{const c=selCamp;const elig=eligibleForCamp(c).sort(sortName);return(
         <Modal title={"🏆 "+c.nome} onClose={()=>setSelCamp(null)} wide>
           <div style={{display:"grid",gridTemplateColumns:user?.role==="admin"?"1fr 1fr":"1fr",gap:16}}>
@@ -1055,7 +1103,7 @@ export default function App() {
           </div>
         </Modal>
       );})()}
-      {showEv&&<Modal title="➕ Nova Partida" onClose={()=>setShowEv(false)}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}><Inp label="Nome" req value={evF.nome} onChange={v=>setEvF(f=>({...f,nome:v}))} full/><Inp label="Data" type="date" value={evF.data} onChange={v=>setEvF(f=>({...f,data:v}))}/><Inp label="Local" value={evF.local} onChange={v=>setEvF(f=>({...f,local:v}))} placeholder="Estádio Municipal"/><Inp label="Taxa (R$)" type="number" value={evF.taxa} onChange={v=>setEvF(f=>({...f,taxa:v}))}/></div><div style={{display:"flex",gap:10}}><Btn color={N} disabled={!evF.nome} onClick={addEv}>✅ Criar</Btn><Btn outline color="#888" onClick={()=>setShowEv(false)}>Cancelar</Btn></div></Modal>}
+      {showEv&&<Modal title="Nova Partida" onClose={()=>setShowEv(false)}><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:18}}><Inp label="Nome" req value={evF.nome} onChange={v=>setEvF(f=>({...f,nome:v}))} full/><Inp label="Data" type="date" value={evF.data} onChange={v=>setEvF(f=>({...f,data:v}))}/><Inp label="Local" value={evF.local} onChange={v=>setEvF(f=>({...f,local:v}))} placeholder="Estádio Municipal"/><Inp label="Taxa (R$)" type="number" value={evF.taxa} onChange={v=>setEvF(f=>({...f,taxa:v}))}/></div><div style={{display:"flex",gap:10}}><Btn color={N} disabled={!evF.nome} onClick={addEv}>✅ Criar</Btn><Btn outline color="#888" onClick={()=>setShowEv(false)}>Cancelar</Btn></div></Modal>}
     </div>
   );
 
@@ -1321,14 +1369,46 @@ export default function App() {
   const toggleFinCat=cat=>setFPCats(list=>list.includes(cat)?list.filter(c=>c!==cat):[...list,cat]);
   const athPayments=a=>pagamentos.filter(p=>Number(p.aId)===Number(a.id)).sort((x,y)=>String(y.data||"").localeCompare(String(x.data||"")));
   const athFinHist=a=>finHist.filter(h=>Number(h.aId)===Number(a.id)||normTxt(h.atleta)===normTxt(a.nomeAtleta)).sort((x,y)=>new Date(y.data||0)-new Date(x.data||0));
+  const makeAthStatementBlob=async a=>{
+    const rows=athPayments(a);const paid=sumPg(rows,"Pago");const pend=sumPg(rows,"Pendente");const isentos=rows.filter(pg=>pg.status==="Isento").length;
+    if(document.fonts?.ready) await document.fonts.ready.catch(()=>{});
+    const W=1080,rowH=64,H=390+Math.max(rows.length,1)*rowH+70,scale=2;
+    const canvas=document.createElement("canvas");canvas.width=W*scale;canvas.height=H*scale;
+    const ctx=canvas.getContext("2d");ctx.scale(scale,scale);
+    const cut=(txt,max)=>String(txt||"").length>max?String(txt||"").slice(0,max-1)+"…":String(txt||"");
+    ctx.fillStyle="#FFFFFF";ctx.fillRect(0,0,W,H);
+    ctx.fillStyle=N;ctx.fillRect(0,0,W,132);
+    ctx.fillStyle=G;ctx.fillRect(0,126,W,6);
+    ctx.fillStyle="white";ctx.font="900 34px Roboto, Arial";ctx.fillText("Itajaí Agrifut",42,54);
+    ctx.font="700 20px Roboto, Arial";ctx.fillStyle="#CBD5E1";ctx.fillText("Demonstrativo financeiro do atleta",42,86);
+    ctx.fillStyle=G;ctx.font="900 24px Roboto, Arial";ctx.fillText(fmtD(tod()),W-166,54);
+    ctx.fillStyle=N;ctx.font="900 30px Roboto, Arial";ctx.fillText(cut(a.nomeAtleta,42),42,178);
+    ctx.fillStyle="#64748B";ctx.font="700 18px Roboto, Arial";ctx.fillText(`${a.projeto||"Sem projeto"} · ${a.categoria||"Sem categoria"} · Responsável: ${cut(a.nomeResp||"—",36)}`,42,206);
+    const cards=[["Pago",fmtR(paid),"#059669"],["Pendente",fmtR(pend),R],["Isenções",String(isentos),OR],["Registros",String(rows.length),N]];
+    cards.forEach((c,i)=>{const x=42+i*250;ctx.fillStyle="#F8FAFC";ctx.fillRect(x,236,220,86);ctx.fillStyle=c[2];ctx.fillRect(x,236,7,86);ctx.fillStyle=c[2];ctx.font="900 26px Roboto, Arial";ctx.fillText(c[1],x+20,272);ctx.fillStyle="#64748B";ctx.font="800 15px Roboto, Arial";ctx.fillText(c[0].toUpperCase(),x+20,300);});
+    let y=360;ctx.fillStyle=N;ctx.fillRect(42,y,W-84,38);ctx.fillStyle=G;ctx.font="900 15px Roboto, Arial";["DATA","TIPO","DESCRIÇÃO","STATUS","VALOR"].forEach((h,i)=>ctx.fillText(h,[58,178,402,748,902][i],y+25));
+    y+=38;
+    if(!rows.length){ctx.fillStyle="#64748B";ctx.font="700 22px Roboto, Arial";ctx.fillText("Nenhum registro financeiro encontrado.",58,y+52);}
+    rows.forEach((pg,i)=>{ctx.fillStyle=i%2===0?"#FFFFFF":"#F8FAFC";ctx.fillRect(42,y,W-84,rowH);ctx.strokeStyle="#E2E8F0";ctx.beginPath();ctx.moveTo(42,y+rowH);ctx.lineTo(W-42,y+rowH);ctx.stroke();const sc=pg.status==="Pago"?"#059669":pg.status==="Pendente"?R:OR;ctx.fillStyle="#334155";ctx.font="700 16px Roboto, Arial";ctx.fillText(fmtD(pg.data),58,y+39);ctx.fillStyle=N;ctx.font="800 17px Roboto, Arial";ctx.fillText(cut(pg.tipo,20),178,y+31);ctx.fillStyle="#64748B";ctx.font="600 14px Roboto, Arial";ctx.fillText(cut(pg.desc||pg.txn||"—",36),402,y+31);ctx.fillStyle=sc;ctx.font="900 16px Roboto, Arial";ctx.fillText(pg.status||"—",748,y+31);ctx.fillStyle=N;ctx.font="900 18px Roboto, Arial";ctx.fillText(pg.valor?fmtR(pg.valor):"—",902,y+31);y+=rowH;});
+    ctx.fillStyle="#94A3B8";ctx.font="600 14px Roboto, Arial";ctx.fillText("Extrato gerado pelo sistema Agrifut. Valores sujeitos à conferência administrativa.",42,H-30);
+    return await new Promise(res=>canvas.toBlob(res,"image/png",0.95));
+  };
+  const shareAthStatement=async a=>{
+    const blob=await makeAthStatementBlob(a);if(!blob){t2("Não foi possível gerar a imagem.");return;}
+    const fileName=`extrato_financeiro_${safeFileName(a.nomeAtleta)}_${tod()}.png`;
+    const file=new File([blob],fileName,{type:"image/png"});
+    if(navigator.canShare?.({files:[file]})){try{await navigator.share({files:[file],title:"Extrato financeiro",text:`Extrato financeiro de ${a.nomeAtleta}`});return;}catch(e){if(e?.name==="AbortError")return;}}
+    const url=URL.createObjectURL(blob);const el=document.createElement("a");el.href=url;el.download=fileName;el.click();setTimeout(()=>URL.revokeObjectURL(url),1500);
+    t2("Imagem do extrato baixada. Anexe no WhatsApp para enviar.");
+  };
   const renderAthFinanceBox=(a,{allowPay=false}={})=>{
     const myPg=athPayments(a);const myHist=athFinHist(a);
     const paid=sumPg(myPg,"Pago");const pend=sumPg(myPg,"Pendente");const isentos=myPg.filter(pg=>pg.status==="Isento").length;
     return(
       <div style={{background:"white",borderRadius:16,padding:18,boxShadow:"0 2px 12px #0001",marginBottom:14}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:12}}>
-          <p style={{fontWeight:800,fontSize:14,color:N,margin:0}}>💰 Histórico Financeiro do Atleta</p>
-          <Badge text={a.nomeAtleta} color={N}/>
+          <p style={{fontWeight:800,fontSize:14,color:N,margin:0}}>Histórico Financeiro do Atleta</p>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}><Badge text={a.nomeAtleta} color={N}/><Btn small outline color={BL} onClick={()=>shareAthStatement(a)}>Extrato imagem</Btn></div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:12}}>
           {[{l:"Pago",v:fmtR(paid),c:"#059669"},{l:"Pendente",v:fmtR(pend),c:R},{l:"Isenções",v:isentos,c:OR},{l:"Registros",v:myPg.length,c:N}].map(s=><div key={s.l} style={{background:"#F8FAFC",borderRadius:8,padding:"8px 10px",borderLeft:"3px solid "+s.c}}><p style={{margin:0,fontWeight:900,fontSize:15,color:s.c}}>{s.v}</p><p style={{margin:0,fontSize:10,color:"#64748B",fontWeight:800,textTransform:"uppercase"}}>{s.l}</p></div>)}
@@ -1591,7 +1671,7 @@ export default function App() {
   };
 
   // ── Login ─────────────────────────────────────────────
-  if(loading) return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:`linear-gradient(135deg,${N},#2D4A7A)`}}><p style={{color:"white",fontSize:18,fontWeight:700}}>Carregando...</p></div>;
+  if(loading) return <div style={{fontFamily:"'Roboto',system-ui,sans-serif",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:`linear-gradient(135deg,${N},#2D4A7A)`,padding:20}}><div style={{textAlign:"center",color:"white"}}><AgrifutLogo size={86}/><p style={{fontSize:18,fontWeight:900,margin:"14px 0 4px"}}>Carregando sistema</p><p style={{fontSize:13,color:"#CBD5E1",margin:0}}>Sincronizando dados do Agrifut...</p><div style={{width:180,height:6,background:"#ffffff22",borderRadius:99,overflow:"hidden",margin:"18px auto 0"}}><div style={{width:"58%",height:"100%",background:G,borderRadius:99}}/></div></div></div>;
 
   if(!user) return (
     <div style={{minHeight:"100vh",background:`linear-gradient(135deg,${N} 0%,#2D4A7A 100%)`,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -1604,8 +1684,8 @@ export default function App() {
 
         {/* Public form access */}
         <div style={{background:"#F0FFF4",borderRadius:12,padding:14,border:"1px solid #86EFAC",marginBottom:20,textAlign:"center"}}>
-          <p style={{fontWeight:700,color:"#065F46",fontSize:13,margin:"0 0 8px"}}>⚽ Novo atleta? Faça seu cadastro aqui:</p>
-          <button onClick={()=>{setUser({role:"publico",nome:"Visitante"});setTab("form");}} style={{background:GR,color:"white",border:"none",borderRadius:10,padding:"10px 24px",fontWeight:800,fontSize:14,cursor:"pointer",width:"100%"}}>📝 Cadastrar Atleta</button>
+          <p style={{fontWeight:700,color:"#065F46",fontSize:13,margin:"0 0 8px"}}>Novo atleta? Faça seu cadastro aqui:</p>
+          <button onClick={()=>{setUser({role:"publico",nome:"Visitante"});setTab("form");}} style={{background:GR,color:"white",border:"none",borderRadius:10,padding:"10px 24px",fontWeight:800,fontSize:14,cursor:"pointer",width:"100%"}}>Cadastrar Atleta</button>
         </div>
 
         <div style={{borderTop:"1px solid #E2E8F0",paddingTop:18,marginBottom:16}}>
@@ -1616,21 +1696,22 @@ export default function App() {
     </div>
   );
 
-  const ADMIN_TABS=[{id:"athletes",l:"📋 Atletas"},{id:"form",l:"➕ Cadastrar"},{id:"presenca",l:"📅 Presença"},{id:"campeonatos",l:"🏆 Campeonatos"},{id:"financeiro",l:"💰 Financeiro"},{id:"estoque",l:"🛍️ Estoque"},{id:"professores",l:"🧢 Professores"}];
-  const PROF_TABS=[{id:"athletes",l:"📋 Turma"},{id:"form",l:"➕ Cadastrar"},{id:"presenca",l:"📅 Presença"},{id:"campeonatos",l:"🏆 Campeonatos"},...(user.financeiro?[{id:"financeiro",l:"💰 Financeiro"}]:[]),{id:"estoque",l:"🛍️ Estoque"}];
-  const PUBLICO_TABS=[{id:"form",l:"📝 Cadastro"}];
-  const ATLETA_TABS=[{id:"portal",l:"⚽ Meu Perfil"},{id:"estoque",l:"🛍️ Loja"}];
+  const ADMIN_TABS=[{id:"athletes",l:"Atletas"},{id:"form",l:"Cadastrar"},{id:"presenca",l:"Presença"},{id:"campeonatos",l:"Campeonatos"},{id:"financeiro",l:"Financeiro"},{id:"estoque",l:"Estoque"},{id:"professores",l:"Professores"}];
+  const PROF_TABS=[{id:"athletes",l:"Turma"},{id:"form",l:"Cadastrar"},{id:"presenca",l:"Presença"},{id:"campeonatos",l:"Campeonatos"},...(user.financeiro?[{id:"financeiro",l:"Financeiro"}]:[]),{id:"estoque",l:"Estoque"}];
+  const PUBLICO_TABS=[{id:"form",l:"Cadastro"}];
+  const ATLETA_TABS=[{id:"portal",l:"Meu Perfil"},{id:"estoque",l:"Loja"}];
   const tabs=user.role==="admin"?ADMIN_TABS:user.role==="professor"?PROF_TABS:user.role==="publico"?PUBLICO_TABS:ATLETA_TABS;
 
   return (
-    <div style={{fontFamily:"'Segoe UI',system-ui,sans-serif",minHeight:"100vh",background:"#F1F5F9"}}>
+    <div className="agrifut-app-shell" style={{fontFamily:"'Roboto',system-ui,sans-serif",minHeight:"100vh",background:"#F1F5F9"}}>
+      <GlobalAppStyles/>
       <div style={{background:N,padding:"10px 18px"}}>
-        <div style={{maxWidth:1100,margin:"0 auto",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+        <div className="agrifut-header-inner" style={{maxWidth:1100,margin:"0 auto",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
           <AgrifutLogo size={40}/>
           <div style={{flex:1}}><p style={{color:"white",fontWeight:800,fontSize:14,margin:0}}>ITAJAÍ AGRIFUT</p><p style={{color:G,fontSize:10,margin:0,letterSpacing:1}}>{user.role==="admin"?"ADMINISTRADOR":user.role==="professor"?"PROFESSOR — "+user.nome:user.role==="publico"?"CADASTRO PÚBLICO":"ATLETA — "+user.nome}</p></div>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          <div className="agrifut-tabs" style={{display:"flex",gap:5,flexWrap:"wrap"}}>
             {tabs.map(t=><button key={t.id} onClick={()=>setTab(t.id)} style={{background:tab===t.id?G:"transparent",color:tab===t.id?N:"white",border:`1.5px solid ${tab===t.id?G:"#ffffff33"}`,borderRadius:8,padding:"5px 11px",cursor:"pointer",fontWeight:700,fontSize:11,whiteSpace:"nowrap"}}>{t.l}</button>)}
-            <button onClick={()=>{setUser(null);setNewAthToken("");}} style={{background:"transparent",color:"#94A3B8",border:"1.5px solid #ffffff22",borderRadius:8,padding:"5px 11px",cursor:"pointer",fontWeight:700,fontSize:11}}>Sair</button>
+            <button onClick={logout} style={{background:"transparent",color:"#94A3B8",border:"1.5px solid #ffffff22",borderRadius:8,padding:"5px 11px",cursor:"pointer",fontWeight:700,fontSize:11}}>Sair</button>
           </div>
         </div>
       </div>
@@ -1727,7 +1808,7 @@ function PDFModal({atleta:a, sig, onClose}) {
   const docs=[{l:"RG Atleta",ok:!!a.rgAtleta},{l:"RG Responsável",ok:!!a.rgResp},{l:"Comp. Residência",ok:!!a.comprResid},{l:"Laudo Médico",ok:!!a.laudo}];
   const doPrint=()=>{if(iRef.current){iRef.current.contentWindow.focus();iRef.current.contentWindow.print();}};
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ficha — ${a.nomeAtleta}</title>
-<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;padding:28px;color:#1E293B;font-size:13px;max-width:800px;margin:0 auto}
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Roboto,Arial,sans-serif;padding:28px;color:#1E293B;font-size:13px;max-width:800px;margin:0 auto}
 .hdr{display:flex;align-items:center;gap:16px;margin-bottom:20px;border-bottom:3px solid #F5C518;padding-bottom:14px}
 .logo{width:58px;height:58px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.logo img{width:100%;height:100%;object-fit:contain;display:block}
 h1{font-size:20px;color:#1B2A4A;margin:0}.sub{font-size:11px;color:#94A3B8;margin-top:3px}
@@ -1842,11 +1923,11 @@ function StaffLogin({onLogin, profs, athletes}) {
         placeholder="Data de nasc. DDMMAAAA  /  senha"
         style={{border:"1.5px solid #ddd",borderRadius:8,padding:"10px 12px",fontSize:14,outline:"none",width:"100%",boxSizing:"border-box"}}/>
       {err&&<p style={{color:R,fontSize:13,fontWeight:600,margin:0,textAlign:"center"}}>{err}</p>}
-      <button onClick={handle} style={{background:N,color:G,border:"none",borderRadius:10,padding:"10px",fontWeight:800,fontSize:14,cursor:"pointer"}}>🔐 Entrar</button>
+      <button onClick={handle} style={{background:N,color:G,border:"none",borderRadius:10,padding:"10px",fontWeight:800,fontSize:14,cursor:"pointer"}}>Entrar</button>
       <div style={{background:"#F8FAFC",borderRadius:10,padding:10,fontSize:11,color:"#64748B",lineHeight:1.8}}>
         <strong style={{color:N}}>Como acessar:</strong><br/>
-        👤 Atleta: CPF (sem pontos) + data nasc. ex: <code style={{background:"#EEE",padding:"1px 4px",borderRadius:3}}>01012010</code><br/>
-        🧢 Professor: login + senha cadastrados
+        Atleta: CPF (sem pontos) + data nasc. ex: <code style={{background:"#EEE",padding:"1px 4px",borderRadius:3}}>01012010</code><br/>
+        Professor: login + senha cadastrados
       </div>
     </div>
   );
