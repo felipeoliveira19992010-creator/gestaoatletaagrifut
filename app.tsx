@@ -121,6 +121,10 @@ const genToken = () => "AGF"+Date.now().toString(36).toUpperCase()+Math.random()
 const genTxn = () => "TXN-"+Date.now().toString(36).toUpperCase().slice(-8);
 const catN = c => parseInt((c||"").replace(/\D/g,""))||0;
 const profCatsOf = pf => Array.isArray(pf?.categorias)?pf.categorias.filter(Boolean):(pf?.categoria?[pf.categoria]:[]);
+const isUniformeType = t => ["uniforme","uniforme de treino"].includes(normTxt(t));
+const finTypeKey = t => isUniformeType(t)?"Uniforme":String(t||"");
+const uniq = arr => [...new Set(arr.filter(Boolean))];
+const makePgtoRow = () => ({tipo:"",desc:"",valor:"",status:"Pendente",data:tod(),aId:"",comp:null,itemId:"",tamanho:"",qtd:"1"});
 const readB64 = f => new Promise(r => { const fr=new FileReader(); fr.onload=e=>r({data:e.target.result,name:f.name,type:f.type}); fr.readAsDataURL(f); });
 const expCSV = (rows,fn) => { const csv=rows.map(r=>r.map(c=>`"${String(c||"").replace(/"/g,'""')}"`).join(",")).join("\n"); const b=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}); const u=URL.createObjectURL(b); const a=document.createElement("a"); a.href=u; a.download=fn; a.click(); URL.revokeObjectURL(u); };
 const waOpen = (tel,msg) => window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,"_blank");
@@ -444,7 +448,7 @@ function PayModal({pgto,atleta,onSuccess,onClose}) {
           <p style={{fontSize:12,color:"#64748B",margin:"5px 0 0"}}>{fmtR(valor)} · {fmtD(tod())}</p>
         </div>
         <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
-          <Btn color={GR} onClick={()=>{const msg=`✅ *Pagamento Confirmado — Agrifut*\n🔑 Código: *${txn}*\nAtleta: ${atleta?atleta.nomeAtleta:"—"}\nTipo: ${pgto?pgto.tipo:""}\nValor: ${fmtR(valor)}\nData: ${fmtD(tod())}\n\n_Itajaí Agrifut 🟡⚫_`;waOpen(WA_ADMIN,msg);}}>📲 Enviar ao Admin</Btn>
+          <Btn color={GR} onClick={()=>{const msg=`✅ *Pagamento Confirmado — Agrifut*\n🔑 Código: *${txn}*\nAtleta: ${atleta?atleta.nomeAtleta:"—"}\nTipo: ${pgto?finTypeKey(pgto.tipo):""}\nValor: ${fmtR(valor)}\nData: ${fmtD(tod())}\n\n_Itajaí Agrifut 🟡⚫_`;waOpen(WA_ADMIN,msg);}}>📲 Enviar ao Admin</Btn>
           <Btn color={N} onClick={onClose}>Fechar</Btn>
         </div>
       </div>
@@ -456,7 +460,7 @@ function PayModal({pgto,atleta,onSuccess,onClose}) {
       {/* Resumo */}
       <div style={{background:"#F8FAFC",borderRadius:12,padding:13,border:"1px solid #E2E8F0",marginBottom:18,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
         <div>
-          <p style={{margin:0,fontWeight:800,color:N,fontSize:15}}>{pgto?pgto.tipo:""}{pgto&&pgto.desc?" — "+pgto.desc:""}</p>
+          <p style={{margin:0,fontWeight:800,color:N,fontSize:15}}>{pgto?finTypeKey(pgto.tipo):""}{pgto&&pgto.desc?" — "+pgto.desc:""}</p>
           <p style={{margin:"3px 0 0",fontSize:13,color:"#64748B"}}>Atleta: <strong>{atleta?atleta.nomeAtleta:"—"}</strong></p>
         </div>
         <p style={{margin:0,fontSize:24,fontWeight:900,color:N}}>{fmtR(valor)}</p>
@@ -563,10 +567,11 @@ export default function App() {
   const [migAth,setMigAth]=useState(null);
   const [migC,setMigC]=useState("");const[migP,setMigP]=useState("");
   const [presDate,setPresDate]=useState(tod());const[presProj,setPresProj]=useState("");const[presGi,setPresGi]=useState(null);const[presCat,setPresCat]=useState("");const[presExpPer,setPresExpPer]=useState("dia");
-  const [showPgto,setShowPgto]=useState(false);const[pgtoF,setPgtoF]=useState({tipo:"",desc:"",valor:"",status:"Pendente",data:tod(),aId:"",comp:null,itemId:"",tamanho:"",qtd:"1"});
+  const [showPgto,setShowPgto]=useState(false);const[pgtoF,setPgtoF]=useState(makePgtoRow());
   const [editPgto,setEditPgto]=useState(null);
   const [pgtoAthInput,setPgtoAthInput]=useState("");
-  const [fPSt,setFPSt]=useState("all");const[fPTp,setFPTp]=useState("all");const[fPCats,setFPCats]=useState([]);const[fPAth,setFPAth]=useState("");
+  const [pgtoExtras,setPgtoExtras]=useState([]);
+  const [fPSt,setFPSt]=useState([]);const[fPTp,setFPTp]=useState([]);const[fPCats,setFPCats]=useState([]);const[fPAth,setFPAth]=useState("");
   const [showCamp,setShowCamp]=useState(false);const[campF,setCampF]=useState({nome:"",data:"",cat:"",proj:""});const[selCamp,setSelCamp]=useState(null);
   const [showEv,setShowEv]=useState(false);const[evF,setEvF]=useState({nome:"",data:"",local:"",taxa:""});
   const [showProf,setShowProf]=useState(false);const[profF,setProfF]=useState({nome:"",user:"",pass:"",projeto:"",categoria:"",categorias:[],financeiro:false,estoqueEdit:false});
@@ -710,17 +715,21 @@ export default function App() {
   const findPgtoAth=v=>{const q=normTxt(v);return athletes.find(a=>normTxt(pgtoAthLabel(a))===q)||athletes.find(a=>normTxt(a.nomeAtleta)===q)||null;};
   const setPgtoAth=v=>{setPgtoAthInput(v);const a=findPgtoAth(v);setPgtoF(f=>({...f,aId:a?Number(a.id):""}));};
   const vendaItens=()=>itens.filter(i=>i.categoria==="Item de Venda");
-  const financeTypeOptions=()=>[...PTYPES,...vendaItens().map(i=>i.nome).filter(t=>!PTYPES.includes(t))];
+  const financeTypeOptions=()=>uniq([...PTYPES,...vendaItens().map(i=>finTypeKey(i.nome))]);
   const saleDesc=(item,tam,qtd)=>`${item.nome}${tam?" — Tam: "+tam:""} x${qtd||1}`;
   const saleValue=(item,qtd)=>String(Number(item?.preco||0)*Number(qtd||1));
-  const findSaleItem=v=>vendaItens().find(i=>Number(i.id)===Number(v)||normTxt(i.nome)===normTxt(v));
-  const applyPgtoSale=(item,patch={})=>setPgtoF(f=>{const qtd=patch.qtd??f.qtd??"1";const reqTam=patch.tamanho??f.tamanho;const tamanho=(item.tamanhos||[]).includes(reqTam)?reqTam:(item.tamanhos||[])[0]||"";return{...f,...patch,tipo:item.nome,itemId:item.id,tamanho,qtd,desc:saleDesc(item,tamanho,qtd),valor:saleValue(item,qtd)};});
-  const setPgtoTipo=v=>{const item=findSaleItem(v);if(item){applyPgtoSale(item,{qtd:pgtoF.qtd||"1"});return;}setPgtoF(f=>({...f,tipo:v,itemId:"",tamanho:"",qtd:"1",desc:f.itemId?"":f.desc,valor:f.itemId?"":f.valor}));};
-  const resetPgtoF=()=>{setPgtoF({tipo:"",desc:"",valor:"",status:"Pendente",data:tod(),aId:"",comp:null,itemId:"",tamanho:"",qtd:"1"});setPgtoAthInput("");};
+  const findSaleItem=v=>{const exact=vendaItens().find(i=>Number(i.id)===Number(v)||normTxt(i.nome)===normTxt(v));return exact||(isUniformeType(v)?vendaItens().find(i=>isUniformeType(i.nome)):null);};
+  const updatePgtoRow=(idx,updater)=>{const apply=old=>typeof updater==="function"?updater(old):{...old,...updater};if(idx===0){setPgtoF(apply);return;}setPgtoExtras(list=>list.map((r,i)=>i===idx-1?apply(r):r));};
+  const applyPgtoSale=(idx,item,patch={})=>updatePgtoRow(idx,f=>{const qtd=patch.qtd??f.qtd??"1";const reqTam=patch.tamanho??f.tamanho;const tamanho=(item.tamanhos||[]).includes(reqTam)?reqTam:(item.tamanhos||[])[0]||"";return{...f,...patch,tipo:finTypeKey(item.nome),itemId:item.id,tamanho,qtd,desc:saleDesc(item,tamanho,qtd),valor:saleValue(item,qtd)};});
+  const setPgtoTipo=(v,idx=0)=>{const item=findSaleItem(v);const cur=idx===0?pgtoF:pgtoExtras[idx-1];if(item){applyPgtoSale(idx,item,{qtd:cur?.qtd||"1"});return;}updatePgtoRow(idx,f=>({...f,tipo:finTypeKey(v),itemId:"",tamanho:"",qtd:"1",desc:f.itemId?"":f.desc,valor:f.itemId?"":f.valor}));};
+  const resetPgtoF=()=>{setPgtoF(makePgtoRow());setPgtoExtras([]);setPgtoAthInput("");};
+  const addPgtoLine=()=>setPgtoExtras(list=>[...list,makePgtoRow()]);
+  const removePgtoLine=idx=>setPgtoExtras(list=>list.filter((_,i)=>i!==idx-1));
+  const pgtoRows=()=>editPgto?[pgtoF]:[pgtoF,...pgtoExtras];
   const createQuickFinanceAth=async()=>{const nome=titleName(pgtoAthInput);if(!nome)return;const exists=athletes.find(a=>normTxt(a.nomeAtleta)===normTxt(nome));if(exists){setPgtoF(f=>({...f,aId:Number(exists.id)}));setPgtoAthInput(pgtoAthLabel(exists));t2("✅ Atleta encontrado e selecionado.");return;}const token=genToken();const ath={...BLANK,id:Date.now(),token,nomeAtleta:nome,age:"",createdAt:new Date().toISOString()};const nl=[...athletes,ath];setAthletes(nl);await sA(nl);setPgtoF(f=>({...f,aId:Number(ath.id)}));setPgtoAthInput(pgtoAthLabel(ath));t2("✅ Cadastro rápido criado para o financeiro.");};
-  const addPgto=async()=>{if(!pgtoF.tipo||!pgtoF.aId)return;const txn=pgtoF.comp?genTxn():"";const np={...pgtoF,aId:Number(pgtoF.aId),id:Date.now(),txn};const nl=[...pagamentos,np];setPagamentos(nl);await sP(nl);await addFinHist("Registro criado",np);if(np.comp){const ath=athletes.find(x=>x.id===np.aId);const msg=`📋 *Comprovante*\n🔑 Código: *${txn}*\nAtleta: ${ath?ath.nomeAtleta:"—"}\nTipo: ${np.tipo}\nValor: ${np.valor?fmtR(np.valor):"-"}`;const el=document.createElement("a");el.href=np.comp.data;el.download=np.comp.name;el.click();setTimeout(()=>waOpen(WA_ADMIN,msg),600);}setShowPgto(false);resetPgtoF();t2("✅ Registro adicionado!");};
-  const openEditPgto=pg=>{setEditPgto(pg);setPgtoF({...pg});setPgtoAthInput(pgtoAthLabel(athletes.find(a=>Number(a.id)===Number(pg.aId))));setShowPgto(true);};
-  const saveEditPgto=async()=>{if(!editPgto||!pgtoF.tipo||!pgtoF.aId)return;const updated={...editPgto,...pgtoF,aId:Number(pgtoF.aId)};const nl=pagamentos.map(p=>p.id===editPgto.id?updated:p);setPagamentos(nl);await sP(nl);await addFinHist("Registro editado",updated,`Antes: ${fmtR(editPgto.valor)} / ${editPgto.status}`);setEditPgto(null);setShowPgto(false);resetPgtoF();t2("✅ Registro financeiro atualizado!");};
+  const addPgto=async()=>{const rows=pgtoRows().filter(r=>r.tipo);if(!pgtoF.aId||rows.length===0)return;const base=Date.now();const created=rows.map((r,i)=>({...r,tipo:finTypeKey(r.tipo),aId:Number(pgtoF.aId),id:base+i,txn:r.comp?genTxn():""}));const nl=[...pagamentos,...created];setPagamentos(nl);await sP(nl);for(const np of created)await addFinHist("Registro criado",np);const withComp=created.filter(np=>np.comp);if(withComp.length){const ath=athletes.find(x=>Number(x.id)===Number(pgtoF.aId));withComp.forEach(np=>{const el=document.createElement("a");el.href=np.comp.data;el.download=np.comp.name;el.click();});const linhas=withComp.map(np=>`🔑 ${np.txn} — ${finTypeKey(np.tipo)} — ${np.valor?fmtR(np.valor):"-"}`).join("\n");const msg=`📋 *Comprovante*\nAtleta: ${ath?ath.nomeAtleta:"—"}\n${linhas}`;setTimeout(()=>waOpen(WA_ADMIN,msg),600);}setShowPgto(false);resetPgtoF();t2(created.length===1?"✅ Registro adicionado!":`✅ ${created.length} registros adicionados!`);};
+  const openEditPgto=pg=>{setEditPgto(pg);setPgtoExtras([]);setPgtoF({...pg,tipo:finTypeKey(pg.tipo)});setPgtoAthInput(pgtoAthLabel(athletes.find(a=>Number(a.id)===Number(pg.aId))));setShowPgto(true);};
+  const saveEditPgto=async()=>{if(!editPgto||!pgtoF.tipo||!pgtoF.aId)return;const updated={...editPgto,...pgtoF,tipo:finTypeKey(pgtoF.tipo),aId:Number(pgtoF.aId)};const nl=pagamentos.map(p=>p.id===editPgto.id?updated:p);setPagamentos(nl);await sP(nl);await addFinHist("Registro editado",updated,`Antes: ${fmtR(editPgto.valor)} / ${editPgto.status}`);setEditPgto(null);setShowPgto(false);resetPgtoF();t2("✅ Registro financeiro atualizado!");};
   const updPgto=async(id,status)=>{let changed=null;const nl=pagamentos.map(p=>{if(p.id!==id)return p;changed={...p,status};return changed;});setPagamentos(nl);await sP(nl);if(changed)await addFinHist("Status alterado",changed,status);};
   const delPgto=async id=>{const old=pagamentos.find(p=>p.id===id);const nl=pagamentos.filter(p=>p.id!==id);setPagamentos(nl);await sP(nl);if(old)await addFinHist("Registro removido",old);};
 
@@ -779,8 +788,8 @@ export default function App() {
     setPagamentos(nl);await sP(nl);await addFinHist("Status taxa competição",updated,campPayDesc(camp,ev));t2("✅ Financeiro da competição atualizado!");
   };
   const hasInscricaoOk=aId=>pagamentos.some(pg=>pg.aId===aId&&pg.tipo==="Taxa de Inscrição"&&(pg.status==="Pago"||pg.status==="Isento"));
-  const hasTaxaGeralOk=aId=>pagamentos.some(pg=>pg.aId===aId&&pg.tipo!=="Uniforme"&&(pg.status==="Pago"||pg.status==="Isento"));
-  const taxaLabel=aId=>{const pg=pagamentos.find(x=>x.aId===aId&&x.tipo!=="Uniforme"&&(x.status==="Pago"||x.status==="Isento"));return pg?`${pg.tipo}: ${pg.status}`:"Sem taxa";};
+  const hasTaxaGeralOk=aId=>pagamentos.some(pg=>pg.aId===aId&&!isUniformeType(pg.tipo)&&(pg.status==="Pago"||pg.status==="Isento"));
+  const taxaLabel=aId=>{const pg=pagamentos.find(x=>x.aId===aId&&!isUniformeType(x.tipo)&&(x.status==="Pago"||x.status==="Isento"));return pg?`${finTypeKey(pg.tipo)}: ${pg.status}`:"Sem taxa";};
   const togInsc=async(camp,aId)=>{if(user?.role!=="admin")return;if(!hasInscricaoOk(aId)){t2("⚠️ Atleta sem taxa de inscrição paga ou isenta!");return;}const adding=!camp.inscritos.includes(aId);const ins=adding?[...camp.inscritos,aId]:camp.inscritos.filter(x=>x!==aId);const nl=camps.map(c=>c.id===camp.id?{...c,inscritos:ins}:c);setCamps(nl);await sC(nl);const nc=nl.find(c=>c.id===camp.id);setSelCamp(nc);if(adding)await syncCampFinance(nc,nc.eventos||[],[aId],true);};
   const addEv=async()=>{if(user?.role!=="admin"||!evF.nome||!selCamp)return;const ev={...evF,id:Date.now(),convocados:[]};const nl=camps.map(c=>c.id===selCamp.id?{...c,eventos:[...(c.eventos||[]),ev]}:c);setCamps(nl);await sC(nl);const nc=nl.find(c=>c.id===selCamp.id);setSelCamp(nc);if(Number(ev.taxa||0)>0)await syncCampFinance(nc,ev,nc.inscritos||[],true);setShowEv(false);setEvF({nome:"",data:"",local:"",taxa:""});t2("✅ Evento criado!");};
   const togConv=async(camp,evId,aId)=>{const ev=(camp.eventos||[]).find(e=>e.id===evId);if(!camp.inscritos.includes(aId)&&!campPayOk(camp,ev,aId)&&!hasTaxaGeralOk(aId)){t2("⚠️ Atleta sem inscrição ou taxa paga/isenta!");return;}const nl=camps.map(c=>c.id===camp.id?{...c,eventos:c.eventos.map(ev=>ev.id===evId?{...ev,convocados:ev.convocados.includes(aId)?ev.convocados.filter(x=>x!==aId):[...ev.convocados,aId]}:ev)}:c);setCamps(nl);await sC(nl);setSelCamp(nl.find(c=>c.id===camp.id));};
@@ -1134,7 +1143,7 @@ export default function App() {
     if(!ath){t2("⚠️ Selecione o atleta comprador.");return false;}
     const total=item.preco*Number(qtd||1);
     if(item.preco>0){
-      const np={id:Date.now(),aId:ath.id,tipo:item.nome,desc:saleDesc(item,tam,qtd),valor:String(total),status,data:tod(),txn:status==="Pago"?genTxn():"",comp:null,itemId:item.id,tamanho:tam,qtd:Number(qtd||1)};
+      const np={id:Date.now(),aId:ath.id,tipo:finTypeKey(item.nome),desc:saleDesc(item,tam,qtd),valor:String(total),status,data:tod(),txn:status==="Pago"?genTxn():"",comp:null,itemId:item.id,tamanho:tam,qtd:Number(qtd||1)};
       const nl=[...pagamentos,np];setPagamentos(nl);await sP(nl);await addFinHist(status==="Pago"?"Venda de estoque paga":"Venda de estoque registrada",np);
     }
     const itemList=itens.map(i=>{
@@ -1358,11 +1367,16 @@ export default function App() {
   const finAthName=pg=>finAthOf(pg)?.nomeAtleta||"Sem atleta";
   const finVal=pg=>Number(pg.valor||0);
   const finCatOpts=[...CATS,"Sem categoria"];
+  const finTypeOf=pg=>finTypeKey(pg.tipo);
   const finCatMatch=pg=>fPCats.length===0||fPCats.includes(finCatOf(pg));
+  const finStatusMatch=pg=>fPSt.length===0||fPSt.includes(pg.status);
+  const finTypeMatch=pg=>fPTp.length===0||fPTp.includes(finTypeOf(pg));
   const finAthMatch=pg=>!normTxt(fPAth)||normTxt(finAthName(pg)).includes(normTxt(fPAth));
   const histAthMatch=h=>!normTxt(fPAth)||normTxt(h.atleta).includes(normTxt(fPAth));
-  const filtPgto=pagamentos.filter(p=>(fPSt==="all"||p.status===fPSt)&&(fPTp==="all"||p.tipo===fPTp)&&finCatMatch(p)&&finAthMatch(p));
-  const filtFinHist=finHist.filter(histAthMatch);
+  const histStatusMatch=h=>fPSt.length===0||fPSt.includes(h.status);
+  const histTypeMatch=h=>fPTp.length===0||fPTp.includes(finTypeKey(h.tipo));
+  const filtPgto=pagamentos.filter(p=>finStatusMatch(p)&&finTypeMatch(p)&&finCatMatch(p)&&finAthMatch(p));
+  const filtFinHist=finHist.filter(h=>histAthMatch(h)&&histStatusMatch(h)&&histTypeMatch(h));
   const sumPg=(rows,status=null)=>rows.filter(p=>!status||p.status===status).reduce((s,p)=>s+finVal(p),0);
   const tGeral=sumPg(filtPgto);
   const tPago=sumPg(filtPgto,"Pago");
@@ -1373,6 +1387,8 @@ export default function App() {
     return {cat,rows,total:sumPg(rows),pago:sumPg(rows,"Pago"),pend:sumPg(rows,"Pendente"),isentos:rows.filter(p=>p.status==="Isento").length};
   }).filter(r=>fPCats.length>0||r.rows.length>0);
   const toggleFinCat=cat=>setFPCats(list=>list.includes(cat)?list.filter(c=>c!==cat):[...list,cat]);
+  const toggleFinStatus=st=>setFPSt(list=>list.includes(st)?list.filter(s=>s!==st):[...list,st]);
+  const toggleFinType=tp=>setFPTp(list=>list.includes(tp)?list.filter(t=>t!==tp):[...list,tp]);
   const athPayments=a=>pagamentos.filter(p=>Number(p.aId)===Number(a.id)).sort((x,y)=>String(y.data||"").localeCompare(String(x.data||"")));
   const athFinHist=a=>finHist.filter(h=>Number(h.aId)===Number(a.id)||normTxt(h.atleta)===normTxt(a.nomeAtleta)).sort((x,y)=>new Date(y.data||0)-new Date(x.data||0));
   const makeAthStatementBlob=async a=>{
@@ -1395,7 +1411,7 @@ export default function App() {
     let y=360;ctx.fillStyle=N;ctx.fillRect(42,y,W-84,38);ctx.fillStyle=G;ctx.font="900 15px Roboto, Arial";["DATA","TIPO","DESCRIÇÃO","STATUS","VALOR"].forEach((h,i)=>ctx.fillText(h,[58,178,402,748,902][i],y+25));
     y+=38;
     if(!rows.length){ctx.fillStyle="#64748B";ctx.font="700 22px Roboto, Arial";ctx.fillText("Nenhum registro financeiro encontrado.",58,y+52);}
-    rows.forEach((pg,i)=>{ctx.fillStyle=i%2===0?"#FFFFFF":"#F8FAFC";ctx.fillRect(42,y,W-84,rowH);ctx.strokeStyle="#E2E8F0";ctx.beginPath();ctx.moveTo(42,y+rowH);ctx.lineTo(W-42,y+rowH);ctx.stroke();const sc=pg.status==="Pago"?"#059669":pg.status==="Pendente"?R:OR;ctx.fillStyle="#334155";ctx.font="700 16px Roboto, Arial";ctx.fillText(fmtD(pg.data),58,y+39);ctx.fillStyle=N;ctx.font="800 17px Roboto, Arial";ctx.fillText(cut(pg.tipo,20),178,y+31);ctx.fillStyle="#64748B";ctx.font="600 14px Roboto, Arial";ctx.fillText(cut(pg.desc||pg.txn||"—",36),402,y+31);ctx.fillStyle=sc;ctx.font="900 16px Roboto, Arial";ctx.fillText(pg.status||"—",748,y+31);ctx.fillStyle=N;ctx.font="900 18px Roboto, Arial";ctx.fillText(pg.valor?fmtR(pg.valor):"—",902,y+31);y+=rowH;});
+    rows.forEach((pg,i)=>{ctx.fillStyle=i%2===0?"#FFFFFF":"#F8FAFC";ctx.fillRect(42,y,W-84,rowH);ctx.strokeStyle="#E2E8F0";ctx.beginPath();ctx.moveTo(42,y+rowH);ctx.lineTo(W-42,y+rowH);ctx.stroke();const sc=pg.status==="Pago"?"#059669":pg.status==="Pendente"?R:OR;ctx.fillStyle="#334155";ctx.font="700 16px Roboto, Arial";ctx.fillText(fmtD(pg.data),58,y+39);ctx.fillStyle=N;ctx.font="800 17px Roboto, Arial";ctx.fillText(cut(finTypeKey(pg.tipo),20),178,y+31);ctx.fillStyle="#64748B";ctx.font="600 14px Roboto, Arial";ctx.fillText(cut(pg.desc||pg.txn||"—",36),402,y+31);ctx.fillStyle=sc;ctx.font="900 16px Roboto, Arial";ctx.fillText(pg.status||"—",748,y+31);ctx.fillStyle=N;ctx.font="900 18px Roboto, Arial";ctx.fillText(pg.valor?fmtR(pg.valor):"—",902,y+31);y+=rowH;});
     ctx.fillStyle="#94A3B8";ctx.font="600 14px Roboto, Arial";ctx.fillText("Extrato gerado pelo sistema Agrifut. Valores sujeitos à conferência administrativa.",42,H-30);
     return await new Promise(res=>canvas.toBlob(res,"image/png",0.95));
   };
@@ -1426,7 +1442,7 @@ export default function App() {
               <tbody>{myPg.map((pg,i)=>{const sc=pg.status==="Pago"?"#059669":pg.status==="Pendente"?R:OR;return(
                 <tr key={pg.id} style={{background:i%2===0?"white":"#F8FAFC",borderBottom:"1px solid #E2E8F0"}}>
                   <td style={{padding:"8px 9px",fontSize:12,fontWeight:800,color:N}}>{a.nomeAtleta}</td>
-                  <td style={{padding:"8px 9px",fontSize:12}}><span style={{fontWeight:700}}>{pg.tipo}</span>{pg.desc&&<span style={{display:"block",fontSize:10,color:"#64748B"}}>{pg.desc}</span>}</td>
+                  <td style={{padding:"8px 9px",fontSize:12}}><span style={{fontWeight:700}}>{finTypeKey(pg.tipo)}</span>{pg.desc&&<span style={{display:"block",fontSize:10,color:"#64748B"}}>{pg.desc}</span>}</td>
                   <td style={{padding:"8px 9px",fontSize:12,fontWeight:800}}>{pg.valor?fmtR(pg.valor):"—"}</td>
                   <td style={{padding:"8px 9px",fontSize:11,color:"#64748B"}}>{fmtD(pg.data)}</td>
                   <td style={{padding:"8px 9px"}}><Badge text={pg.status} color={sc}/></td>
@@ -1437,14 +1453,14 @@ export default function App() {
           </div>
         )}
         {allowPay&&myPg.some(pg=>pg.status==="Pendente")&&<p style={{fontSize:12,color:"#64748B",margin:"0 0 8px"}}>Cobranças pendentes podem ser pagas pelo botão em cada item abaixo.</p>}
-        {allowPay&&myPg.filter(pg=>pg.status==="Pendente").map(pg=><button key={"pay"+pg.id} onClick={()=>setStripeTarget({pgto:pg,atleta:a})} style={{margin:"0 0 8px",background:"linear-gradient(135deg,#635BFF,#4F46E5)",color:"white",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,fontSize:13,cursor:"pointer",width:"100%"}}>💳 Pagar {pg.tipo}{pg.valor?" - "+fmtR(pg.valor):""}</button>)}
+        {allowPay&&myPg.filter(pg=>pg.status==="Pendente").map(pg=><button key={"pay"+pg.id} onClick={()=>setStripeTarget({pgto:pg,atleta:a})} style={{margin:"0 0 8px",background:"linear-gradient(135deg,#635BFF,#4F46E5)",color:"white",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,fontSize:13,cursor:"pointer",width:"100%"}}>💳 Pagar {finTypeKey(pg.tipo)}{pg.valor?" - "+fmtR(pg.valor):""}</button>)}
         <div style={{borderTop:"1px solid #E2E8F0",paddingTop:10}}>
           <p style={{margin:"0 0 8px",fontSize:12,fontWeight:900,color:N,textTransform:"uppercase",letterSpacing:1}}>Movimentações registradas</p>
           {myHist.length===0?<p style={{color:"#888",fontSize:13,margin:0}}>Nenhuma movimentação registrada para este atleta.</p>:(
             <div style={{maxHeight:220,overflow:"auto",border:"1px solid #E2E8F0",borderRadius:8}}>
               <table style={{width:"100%",borderCollapse:"collapse",minWidth:640}}>
                 <thead><tr style={{background:"#F8FAFC"}}>{["Data","Ação","Atleta","Tipo","Valor","Status"].map(h=><th key={h} style={{padding:"7px 9px",textAlign:"left",fontSize:10,fontWeight:900,color:"#64748B",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-                <tbody>{myHist.map((h,i)=><tr key={h.id||i} style={{background:i%2===0?"white":"#F8FAFC",borderTop:"1px solid #E2E8F0"}}><td style={{padding:"7px 9px",fontSize:11,color:"#64748B",whiteSpace:"nowrap"}}>{new Date(h.data).toLocaleString("pt-BR")}</td><td style={{padding:"7px 9px",fontSize:12,fontWeight:800,color:N}}>{h.action}</td><td style={{padding:"7px 9px",fontSize:12}}>{h.atleta||a.nomeAtleta}</td><td style={{padding:"7px 9px",fontSize:12}}>{h.tipo||"—"}</td><td style={{padding:"7px 9px",fontSize:12,fontWeight:800}}>{h.valor?fmtR(h.valor):"—"}</td><td style={{padding:"7px 9px",fontSize:12}}>{h.status||"—"}</td></tr>)}</tbody>
+                <tbody>{myHist.map((h,i)=><tr key={h.id||i} style={{background:i%2===0?"white":"#F8FAFC",borderTop:"1px solid #E2E8F0"}}><td style={{padding:"7px 9px",fontSize:11,color:"#64748B",whiteSpace:"nowrap"}}>{new Date(h.data).toLocaleString("pt-BR")}</td><td style={{padding:"7px 9px",fontSize:12,fontWeight:800,color:N}}>{h.action}</td><td style={{padding:"7px 9px",fontSize:12}}>{h.atleta||a.nomeAtleta}</td><td style={{padding:"7px 9px",fontSize:12}}>{h.tipo?finTypeKey(h.tipo):"—"}</td><td style={{padding:"7px 9px",fontSize:12,fontWeight:800}}>{h.valor?fmtR(h.valor):"—"}</td><td style={{padding:"7px 9px",fontSize:12}}>{h.status||"—"}</td></tr>)}</tbody>
               </table>
             </div>
           )}
@@ -1453,8 +1469,30 @@ export default function App() {
     );
   };
   const renderPgtoModal=()=>{
-    const pgtoSaleItem=findSaleItem(pgtoF.itemId||pgtoF.tipo);
-    return <Modal title={editPgto?"✏️ Editar Registro Financeiro":"💰 Novo Registro"} onClose={()=>{setShowPgto(false);setEditPgto(null);resetPgtoF();}}>
+    const rows=pgtoRows();
+    const validRows=rows.filter(r=>r.tipo);
+    const renderPgtoLine=(row,idx)=>{
+      const pgtoSaleItem=findSaleItem(row.itemId||"");
+      return <div key={idx} style={{gridColumn:"1/-1",background:idx===0?"#F8FAFC":"#FFFBEB",border:`1px solid ${idx===0?"#E2E8F0":G+"66"}`,borderRadius:12,padding:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10}}>
+          <p style={{margin:0,fontSize:12,fontWeight:900,color:N,textTransform:"uppercase"}}>{idx===0?"Lançamento principal":`Lançamento ${idx+1}`}</p>
+          {!editPgto&&idx>0&&<button onClick={()=>removePgtoLine(idx)} style={{background:"none",border:"none",color:R,cursor:"pointer",fontWeight:900,fontSize:13}}>Remover</button>}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <Sel label="Tipo *" value={row.tipo} onChange={v=>setPgtoTipo(v,idx)} opts={financeTypeOptions()}/>
+          <Sel label="Status" value={row.status} onChange={v=>updatePgtoRow(idx,{status:v})} opts={PSTAT}/>
+          {pgtoSaleItem&&<>
+            <Sel label="Tamanho" value={row.tamanho} onChange={v=>applyPgtoSale(idx,pgtoSaleItem,{tamanho:v})} opts={pgtoSaleItem.tamanhos||[]}/>
+            <Inp label="Quantidade" type="number" value={row.qtd} onChange={v=>applyPgtoSale(idx,pgtoSaleItem,{qtd:v})}/>
+          </>}
+          <Inp label="Descrição" value={row.desc} onChange={v=>updatePgtoRow(idx,{desc:v})} placeholder="ex: Campeonato"/>
+          <Inp label="Valor (R$)" type="number" value={row.valor} disabled={!!pgtoSaleItem} onChange={v=>updatePgtoRow(idx,{valor:v})}/>
+          <Inp label="Data" type="date" value={row.data} onChange={v=>updatePgtoRow(idx,{data:v})}/>
+          <div style={{gridColumn:"1/-1"}}><FilePick label="📎 Comprovante (opcional)" file={row.comp} onChange={f=>updatePgtoRow(idx,{comp:f})}/></div>
+        </div>
+      </div>;
+    };
+    return <Modal title={editPgto?"✏️ Editar Registro Financeiro":"💰 Novo Registro"} wide={!editPgto} onClose={()=>{setShowPgto(false);setEditPgto(null);resetPgtoF();}}>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div style={{gridColumn:"1/-1"}}>
           <label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",display:"block",marginBottom:4}}>Atleta *</label>
@@ -1462,18 +1500,10 @@ export default function App() {
           <datalist id="pgto-athletes">{athletes.slice().sort(sortName).map(a=><option key={a.id} value={pgtoAthLabel(a)}/>)}</datalist>
           {pgtoF.aId?<p style={{margin:"6px 0 0",fontSize:12,color:"#059669",fontWeight:700}}>✅ Atleta selecionado</p>:pgtoAthInput?<div style={{marginTop:8,background:"#FFFBEB",border:`1px solid ${G}66`,borderRadius:8,padding:10,display:"flex",gap:10,alignItems:"center",justifyContent:"space-between",flexWrap:"wrap"}}><span style={{fontSize:12,color:"#92400E",fontWeight:700}}>Nenhum cadastro encontrado para esse nome.</span><Btn small color={G} onClick={createQuickFinanceAth}>+ Cadastro rápido</Btn></div>:<p style={{margin:"6px 0 0",fontSize:12,color:"#64748B"}}>Comece a digitar para ver as opções.</p>}
         </div>
-        <Sel label="Tipo *" value={pgtoF.tipo} onChange={setPgtoTipo} opts={financeTypeOptions()}/>
-        <Sel label="Status" value={pgtoF.status} onChange={v=>setPgtoF(f=>({...f,status:v}))} opts={PSTAT}/>
-        {pgtoSaleItem&&<>
-          <Sel label="Tamanho" value={pgtoF.tamanho} onChange={v=>applyPgtoSale(pgtoSaleItem,{tamanho:v})} opts={pgtoSaleItem.tamanhos||[]}/>
-          <Inp label="Quantidade" type="number" value={pgtoF.qtd} onChange={v=>applyPgtoSale(pgtoSaleItem,{qtd:v})}/>
-        </>}
-        <Inp label="Descrição" value={pgtoF.desc} onChange={v=>setPgtoF(f=>({...f,desc:v}))} placeholder="ex: Campeonato"/>
-        <Inp label="Valor (R$)" type="number" value={pgtoF.valor} disabled={!!pgtoSaleItem} onChange={v=>setPgtoF(f=>({...f,valor:v}))}/>
-        <Inp label="Data" type="date" value={pgtoF.data} onChange={v=>setPgtoF(f=>({...f,data:v}))}/>
-        <div style={{gridColumn:"1/-1"}}><FilePick label="📎 Comprovante (opcional)" file={pgtoF.comp} onChange={f=>setPgtoF(fm=>({...fm,comp:f}))}/></div>
+        {rows.map(renderPgtoLine)}
+        {!editPgto&&<div style={{gridColumn:"1/-1"}}><Btn outline color={N} onClick={addPgtoLine} full>+ Adicionar outro lançamento</Btn></div>}
       </div>
-      <div style={{display:"flex",gap:10}}><Btn color={N} disabled={!pgtoF.tipo||!pgtoF.aId} onClick={editPgto?saveEditPgto:addPgto}>✅ Salvar</Btn><Btn outline color="#888" onClick={()=>{setShowPgto(false);setEditPgto(null);resetPgtoF();}}>Cancelar</Btn></div>
+      <div style={{display:"flex",gap:10}}><Btn color={N} disabled={!pgtoF.aId||validRows.length===0} onClick={editPgto?saveEditPgto:addPgto}>{editPgto?"✅ Salvar":`✅ Salvar ${validRows.length||""} ${validRows.length===1?"registro":"registros"}`}</Btn><Btn outline color="#888" onClick={()=>{setShowPgto(false);setEditPgto(null);resetPgtoF();}}>Cancelar</Btn></div>
     </Modal>;
   };
   const renderFin=()=>(
@@ -1482,17 +1512,19 @@ export default function App() {
         {[{l:"Total Geral",v:fmtR(tGeral),c:N},{l:"Total Pago",v:fmtR(tPago),c:"#059669"},{l:"Pendente",v:fmtR(tPend),c:R},{l:"Registros",v:filtPgto.length,c:OR}].map(s=><div key={s.l} style={{background:"white",borderRadius:12,padding:"12px 14px",boxShadow:"0 2px 8px #0001",borderLeft:"4px solid "+s.c}}><p style={{margin:0,fontSize:20,fontWeight:800,color:s.c}}>{s.v}</p><p style={{margin:0,fontSize:12,color:"#666",fontWeight:600}}>{s.l}</p></div>)}
       </div>
       <div style={{background:"white",borderRadius:12,padding:13,marginBottom:12,boxShadow:"0 2px 8px #0001",display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
-        <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:150}}>
+        <div style={{display:"flex",flexDirection:"column",gap:6,minWidth:220}}>
           <label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:.5}}>Status</label>
-          <select value={fPSt} onChange={e=>setFPSt(e.target.value)} style={{border:"1.5px solid #ddd",borderRadius:8,padding:"8px 11px",fontSize:14,outline:"none",background:"white",width:"100%"}}>
-            <option value="all">Todos</option>{PSTAT.map(s=><option key={s} value={s}>{s}</option>)}
-          </select>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <button onClick={()=>setFPSt([])} style={{background:fPSt.length===0?N:"#F8FAFC",color:fPSt.length===0?G:N,border:`1.5px solid ${fPSt.length===0?N:"#CBD5E1"}`,borderRadius:7,padding:"6px 10px",cursor:"pointer",fontWeight:800,fontSize:12}}>Todos</button>
+            {PSTAT.map(s=>{const on=fPSt.includes(s);return <button key={s} onClick={()=>toggleFinStatus(s)} style={{background:on?N:"#F8FAFC",color:on?G:N,border:`1.5px solid ${on?N:"#CBD5E1"}`,borderRadius:7,padding:"6px 10px",cursor:"pointer",fontWeight:800,fontSize:12}}>{s}</button>;})}
+          </div>
         </div>
-        <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:170}}>
+        <div style={{display:"flex",flexDirection:"column",gap:6,minWidth:280,flex:1}}>
           <label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:.5}}>Tipo</label>
-          <select value={fPTp} onChange={e=>setFPTp(e.target.value)} style={{border:"1.5px solid #ddd",borderRadius:8,padding:"8px 11px",fontSize:14,outline:"none",background:"white",width:"100%"}}>
-            <option value="all">Todos</option>{financeTypeOptions().map(t=><option key={t} value={t}>{t}</option>)}
-          </select>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <button onClick={()=>setFPTp([])} style={{background:fPTp.length===0?N:"#F8FAFC",color:fPTp.length===0?G:N,border:`1.5px solid ${fPTp.length===0?N:"#CBD5E1"}`,borderRadius:7,padding:"6px 10px",cursor:"pointer",fontWeight:800,fontSize:12}}>Todos</button>
+            {financeTypeOptions().map(t=>{const on=fPTp.includes(t);return <button key={t} onClick={()=>toggleFinType(t)} style={{background:on?N:"#F8FAFC",color:on?G:N,border:`1.5px solid ${on?N:"#CBD5E1"}`,borderRadius:7,padding:"6px 10px",cursor:"pointer",fontWeight:800,fontSize:12}}>{t}</button>;})}
+          </div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:3,minWidth:230,flex:1}}>
           <label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",letterSpacing:.5}}>Atleta</label>
@@ -1548,7 +1580,7 @@ export default function App() {
             <tbody>{filtPgto.map((pg,i)=>{const ath=athletes.find(x=>x.id===pg.aId);const sc=pg.status==="Pago"?"#059669":pg.status==="Pendente"?R:OR;return(
               <tr key={pg.id} style={{background:i%2===0?"white":"#F8FAFC",borderBottom:"1px solid #F1F5F9"}}>
                 <td style={{padding:"9px 11px",fontSize:13}}><p style={{margin:0,fontWeight:700,color:N}}>{ath?ath.nomeAtleta:"—"}</p><p style={{margin:0,fontSize:11,color:"#94A3B8"}}>{ath?ath.categoria:""}{ath&&ath.projeto?" · "+ath.projeto:""}</p></td>
-                <td style={{padding:"9px 11px",fontSize:13}}><p style={{margin:0,fontWeight:600}}>{pg.tipo}</p>{pg.desc&&<p style={{margin:0,fontSize:11,color:"#64748B"}}>{pg.desc}</p>}</td>
+                <td style={{padding:"9px 11px",fontSize:13}}><p style={{margin:0,fontWeight:600}}>{finTypeKey(pg.tipo)}</p>{pg.desc&&<p style={{margin:0,fontSize:11,color:"#64748B"}}>{pg.desc}</p>}</td>
                 <td style={{padding:"9px 11px",fontSize:13,fontWeight:700}}>{pg.valor?fmtR(pg.valor):"—"}</td>
                 <td style={{padding:"9px 11px",fontSize:12,color:"#64748B"}}>{fmtD(pg.data)}</td>
                 <td style={{padding:"9px 11px"}}>{pg.txn?<span style={{background:N+"15",color:N,borderRadius:6,padding:"2px 7px",fontSize:11,fontWeight:700,fontFamily:"monospace"}}>{pg.txn}</span>:<span style={{color:"#94A3B8",fontSize:11}}>—</span>}</td>
@@ -1574,7 +1606,7 @@ export default function App() {
           <div style={{maxHeight:260,overflow:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",minWidth:760}}>
               <thead><tr style={{background:"#F8FAFC"}}>{["Data","Ação","Atleta","Tipo","Valor","Status","Obs."].map(h=><th key={h} style={{padding:"8px 11px",textAlign:"left",fontSize:11,fontWeight:800,color:"#64748B",textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-              <tbody>{filtFinHist.map((h,i)=><tr key={h.id||i} style={{background:i%2===0?"white":"#F8FAFC",borderBottom:"1px solid #F1F5F9"}}><td style={{padding:"8px 11px",fontSize:12,color:"#64748B",whiteSpace:"nowrap"}}>{new Date(h.data).toLocaleString("pt-BR")}</td><td style={{padding:"8px 11px",fontSize:13,fontWeight:700,color:N}}>{h.action}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.atleta}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.tipo}</td><td style={{padding:"8px 11px",fontSize:13,fontWeight:700}}>{h.valor?fmtR(h.valor):"—"}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.status||"—"}</td><td style={{padding:"8px 11px",fontSize:12,color:"#64748B"}}>{h.extra||"—"}</td></tr>)}</tbody>
+              <tbody>{filtFinHist.map((h,i)=><tr key={h.id||i} style={{background:i%2===0?"white":"#F8FAFC",borderBottom:"1px solid #F1F5F9"}}><td style={{padding:"8px 11px",fontSize:12,color:"#64748B",whiteSpace:"nowrap"}}>{new Date(h.data).toLocaleString("pt-BR")}</td><td style={{padding:"8px 11px",fontSize:13,fontWeight:700,color:N}}>{h.action}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.atleta}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.tipo?finTypeKey(h.tipo):"—"}</td><td style={{padding:"8px 11px",fontSize:13,fontWeight:700}}>{h.valor?fmtR(h.valor):"—"}</td><td style={{padding:"8px 11px",fontSize:13}}>{h.status||"—"}</td><td style={{padding:"8px 11px",fontSize:12,color:"#64748B"}}>{h.extra||"—"}</td></tr>)}</tbody>
             </table>
           </div>
         )}
