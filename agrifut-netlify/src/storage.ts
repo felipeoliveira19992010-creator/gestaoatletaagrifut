@@ -7,6 +7,13 @@ type BrowserStorage = {
   get: (key: string) => Promise<StorageResult | null>;
   set: (key: string, value: string) => Promise<StorageResult>;
   delete: (key: string) => Promise<{ key: string }>;
+  mutateArray: (
+    key: string,
+    mutation:
+      | { action: "upsert"; item: Record<string, unknown> }
+      | { action: "patch"; id: string | number; patch: Record<string, unknown> }
+      | { action: "delete"; id: string | number }
+  ) => Promise<{ key: string }>;
 };
 
 declare global {
@@ -27,6 +34,27 @@ if (typeof window !== "undefined" && !window.storage) {
     },
     async delete(key) {
       window.localStorage.removeItem(key);
+      return { key };
+    },
+    async mutateArray(key, mutation) {
+      const current = JSON.parse(window.localStorage.getItem(key) || "[]");
+      const idOf = (value: unknown) => String(value ?? "");
+      let next = Array.isArray(current) ? current : [];
+
+      if (mutation.action === "upsert" && mutation.item) {
+        const exists = next.some(item => idOf(item?.id) === idOf(mutation.item.id));
+        next = exists
+          ? next.map(item => idOf(item?.id) === idOf(mutation.item.id) ? mutation.item : item)
+          : [...next, mutation.item];
+      } else if (mutation.action === "patch" && mutation.id !== undefined && mutation.patch) {
+        next = next.map(item => idOf(item?.id) === idOf(mutation.id) ? {...item, ...mutation.patch} : item);
+      } else if (mutation.action === "delete" && mutation.id !== undefined) {
+        next = next.filter(item => idOf(item?.id) !== idOf(mutation.id));
+      } else {
+        throw new Error("Invalid array mutation");
+      }
+
+      window.localStorage.setItem(key, JSON.stringify(next));
       return { key };
     }
   };
@@ -82,6 +110,23 @@ if (typeof window !== "undefined" && !window.storage) {
         console.warn("Using localStorage fallback:", error);
         return localStorageApi.delete(key);
       }
+    },
+    async mutateArray(key, mutation) {
+      if (!canUseServerStorage()) return localStorageApi.mutateArray(key, mutation);
+      const response = await fetch(
+        `/.netlify/functions/storage?key=${encodeURIComponent(key)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(mutation)
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Server array mutation failed: ${response.status}`);
+      }
+
+      return response.json();
     }
   };
 }

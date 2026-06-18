@@ -551,6 +551,7 @@ export default function App() {
   const [camps,setCamps]=useState([]);
   const [profs,setProfs]=useState([{id:"p1",nome:"Professor Demo",user:"prof",pass:"prof123",projeto:"Academy",categoria:"Sub-13",categorias:["Sub-13"],financeiro:false,estoqueEdit:false}]);
   const [loading,setLoading]=useState(true);
+  const lastAthSyncRef=useRef(0);
 
   // UI state
   const [tab,setTab]=useState("athletes");
@@ -592,7 +593,7 @@ export default function App() {
     (async()=>{
       let aths=[];
       for(const [k,fn] of [["agrifut-a9",setAthletes],["agrifut-p9",setPagamentos],["agrifut-fh9",setFinHist],["agrifut-pr9",setPresencas],["agrifut-c9",setCamps],["agrifut-pf9",setProfs],["agrifut-i9",setItens]]){
-        try{const r=await window.storage.get(k);if(r){const parsed=JSON.parse(r.value);fn(parsed);if(k==="agrifut-a9")aths=parsed;}}catch(e){}
+        try{const r=await window.storage.get(k);if(r){const parsed=JSON.parse(r.value);fn(parsed);if(k==="agrifut-a9"){aths=parsed;lastAthSyncRef.current=Date.now();}}}catch(e){}
       }
       // Auto-login via URL token
       const urlToken=getTokenFromURL();
@@ -608,7 +609,20 @@ export default function App() {
     })();
   },[]);
 
-  const sA=async l=>{try{await window.storage.set("agrifut-a9",JSON.stringify(l));}catch(e){}};
+  useEffect(()=>{
+    const refreshAthletes=async()=>{
+      if(document.visibilityState==="hidden"||Date.now()-lastAthSyncRef.current<30000)return;
+      try{
+        const result=await window.storage.get("agrifut-a9");
+        if(result){setAthletes(JSON.parse(result.value));lastAthSyncRef.current=Date.now();}
+      }catch(e){console.warn("Não foi possível sincronizar atletas:",e);}
+    };
+    const onVisibility=()=>{if(document.visibilityState==="visible")refreshAthletes();};
+    window.addEventListener("focus",refreshAthletes);
+    document.addEventListener("visibilitychange",onVisibility);
+    return()=>{window.removeEventListener("focus",refreshAthletes);document.removeEventListener("visibilitychange",onVisibility);};
+  },[]);
+
   const sP=async l=>{try{await window.storage.set("agrifut-p9",JSON.stringify(l));}catch(e){}};
   const sFH=async l=>{try{await window.storage.set("agrifut-fh9",JSON.stringify(l));}catch(e){}};
   const sPr=async l=>{try{await window.storage.set("agrifut-pr9",JSON.stringify(l));}catch(e){}};
@@ -616,6 +630,18 @@ export default function App() {
   const sPf=async l=>{try{await window.storage.set("agrifut-pf9",JSON.stringify(l));}catch(e){}};
   const sI=async l=>{try{await window.storage.set("agrifut-i9",JSON.stringify(l));}catch(e){}};
   const t2=(m,d=3000)=>{setToast(m);setTimeout(()=>setToast(""),d);};
+  const mutateAthlete=async(mutation,nextList)=>{
+    try{
+      await window.storage.mutateArray("agrifut-a9",mutation);
+      setAthletes(nextList);
+      lastAthSyncRef.current=Date.now();
+      return true;
+    }catch(e){
+      console.error("Falha ao salvar atleta:",e);
+      t2("⚠️ Não foi possível salvar no servidor. Tente novamente.",5000);
+      return false;
+    }
+  };
   const sF=(k,v)=>setForm(f=>({...f,[k]:v}));
   const sBirth=v=>setForm(f=>{const oldAuto=categoryByBirth(f.dataNasc);const nextAuto=categoryByBirth(v);return{...f,dataNasc:v,categoria:nextAuto&&(!f.categoria||f.categoria===oldAuto)?nextAuto:f.categoria};});
   const addFinHist=async(action,pg,extra="")=>{
@@ -691,7 +717,7 @@ export default function App() {
     if(!clean.projeto&&!confirm("Finalizar cadastro sem selecionar projeto? O atleta ficará em Sem projeto até ser editado.")){t2("Cadastro não finalizado.");return;}
     const token=genToken();
     const a={...clean,id:Date.now(),token,age:ageOf(clean.dataNasc),createdAt:new Date().toISOString()};
-    const nl=[...athletes,a];setAthletes(nl);await sA(nl);
+    const nl=[...athletes,a];if(!await mutateAthlete({action:"upsert",item:a},nl))return;
     setNewAthToken(token);
     setForm({...BLANK});setStep(0);
   };
@@ -703,10 +729,10 @@ export default function App() {
   };
   const quickSubmit=async()=>{if(!canQuickSubmit()){t2("⚠️ Informe nome, data válida e confira CPF/RG duplicado.");return;}await submit();};
 
-  const saveEdit=async()=>{const clean=normalizeCadastro(editAth);if(hasDuplicateBlock(clean,editAth.id)){t2("⚠️ CPF ou RG já cadastrado em outro atleta.");return;}const nl=athletes.map(a=>a.id===editAth.id?{...clean,age:ageOf(clean.dataNasc)}:a);setAthletes(nl);await sA(nl);setEditAth(null);t2("✅ Atualizado!");};
+  const saveEdit=async()=>{const clean={...normalizeCadastro(editAth),age:ageOf(editAth.dataNasc)};if(hasDuplicateBlock(clean,editAth.id)){t2("⚠️ CPF ou RG já cadastrado em outro atleta.");return;}const current=athletes.find(a=>a.id===editAth.id)||{};const patch=Object.fromEntries(Object.entries(clean).filter(([k,v])=>JSON.stringify(current[k])!==JSON.stringify(v)));const nl=athletes.map(a=>a.id===editAth.id?{...a,...patch}:a);if(!await mutateAthlete({action:"patch",id:editAth.id,patch},nl))return;setEditAth(null);t2("✅ Atualizado!");};
   const migProjectOptions=()=>user?.role==="professor"?["Rendimento","Academy"]:PROJS;
-  const doMig=async()=>{const opts=migProjectOptions();const nextProj=user?.role==="professor"?(opts.includes(migP)?migP:"Academy"):(migP||migAth.projeto);const nl=athletes.map(a=>a.id===migAth.id?{...a,categoria:migC||a.categoria,projeto:nextProj}:a);setAthletes(nl);await sA(nl);setMigAth(null);t2("✅ Migrado!");};
-  const delA=async id=>{if(!confirm("Remover atleta?"))return;const nl=athletes.filter(a=>a.id!==id);setAthletes(nl);await sA(nl);setSelAth(null);};
+  const doMig=async()=>{const opts=migProjectOptions();const nextProj=user?.role==="professor"?(opts.includes(migP)?migP:"Academy"):(migP||migAth.projeto);const patch={categoria:migC||migAth.categoria,projeto:nextProj};const nl=athletes.map(a=>a.id===migAth.id?{...a,...patch}:a);if(!await mutateAthlete({action:"patch",id:migAth.id,patch},nl))return;setMigAth(null);t2("✅ Migração salva no servidor!");};
+  const delA=async id=>{if(!confirm("Remover atleta?"))return;const nl=athletes.filter(a=>a.id!==id);if(!await mutateAthlete({action:"delete",id},nl))return;setSelAth(null);};
   const onPaid=async txnCode=>{if(!stripeTarget)return;const updated={...stripeTarget.pgto,status:"Pago",txn:txnCode};const nl=pagamentos.map(p=>p.id===stripeTarget.pgto.id?updated:p);setPagamentos(nl);await sP(nl);await addFinHist("Pagamento confirmado",updated,txnCode);t2("✅ Pagamento confirmado!");setStripeTarget(null);};
 
   const pgtoAthLabel=a=>a?`${a.nomeAtleta}${a.categoria?" ("+a.categoria+")":""}${a.projeto?" · "+a.projeto:""}`:"";
@@ -724,7 +750,7 @@ export default function App() {
   const addPgtoLine=()=>setPgtoExtras(list=>[...list,makePgtoRow()]);
   const removePgtoLine=idx=>setPgtoExtras(list=>list.filter((_,i)=>i!==idx-1));
   const pgtoRows=()=>editPgto?[pgtoF]:[pgtoF,...pgtoExtras];
-  const createQuickFinanceAth=async()=>{const nome=titleName(pgtoAthInput);if(!nome)return;const exists=athletes.find(a=>normTxt(a.nomeAtleta)===normTxt(nome));if(exists){setPgtoF(f=>({...f,aId:Number(exists.id)}));setPgtoAthInput(pgtoAthLabel(exists));t2("✅ Atleta encontrado e selecionado.");return;}const token=genToken();const ath={...BLANK,id:Date.now(),token,nomeAtleta:nome,age:"",createdAt:new Date().toISOString()};const nl=[...athletes,ath];setAthletes(nl);await sA(nl);setPgtoF(f=>({...f,aId:Number(ath.id)}));setPgtoAthInput(pgtoAthLabel(ath));t2("✅ Cadastro rápido criado para o financeiro.");};
+  const createQuickFinanceAth=async()=>{const nome=titleName(pgtoAthInput);if(!nome)return;const exists=athletes.find(a=>normTxt(a.nomeAtleta)===normTxt(nome));if(exists){setPgtoF(f=>({...f,aId:Number(exists.id)}));setPgtoAthInput(pgtoAthLabel(exists));t2("✅ Atleta encontrado e selecionado.");return;}const token=genToken();const ath={...BLANK,id:Date.now(),token,nomeAtleta:nome,age:"",createdAt:new Date().toISOString()};const nl=[...athletes,ath];if(!await mutateAthlete({action:"upsert",item:ath},nl))return;setPgtoF(f=>({...f,aId:Number(ath.id)}));setPgtoAthInput(pgtoAthLabel(ath));t2("✅ Cadastro rápido criado para o financeiro.");};
   const addPgto=async()=>{const rows=pgtoRows().filter(r=>r.tipo);if(!pgtoF.aId||rows.length===0)return;const base=Date.now();const created=rows.map((r,i)=>({...r,tipo:finTypeKey(r.tipo),aId:Number(pgtoF.aId),id:base+i,txn:r.comp?genTxn():""}));const nl=[...pagamentos,...created];setPagamentos(nl);await sP(nl);for(const np of created)await addFinHist("Registro criado",np);const withComp=created.filter(np=>np.comp);if(withComp.length){const ath=athletes.find(x=>Number(x.id)===Number(pgtoF.aId));withComp.forEach(np=>{const el=document.createElement("a");el.href=np.comp.data;el.download=np.comp.name;el.click();});const linhas=withComp.map(np=>`🔑 ${np.txn} — ${finTypeKey(np.tipo)} — ${np.valor?fmtR(np.valor):"-"}`).join("\n");const msg=`📋 *Comprovante*\nAtleta: ${ath?ath.nomeAtleta:"—"}\n${linhas}`;setTimeout(()=>waOpen(WA_ADMIN,msg),600);}setShowPgto(false);resetPgtoF();t2(created.length===1?"✅ Registro adicionado!":`✅ ${created.length} registros adicionados!`);};
   const openEditPgto=pg=>{setEditPgto(pg);setPgtoExtras([]);setPgtoF({...pg,tipo:finTypeKey(pg.tipo)});setPgtoAthInput(pgtoAthLabel(athletes.find(a=>Number(a.id)===Number(pg.aId))));setShowPgto(true);};
   const saveEditPgto=async()=>{if(!editPgto||!pgtoF.tipo||!pgtoF.aId)return;const updated={...editPgto,...pgtoF,tipo:finTypeKey(pgtoF.tipo),aId:Number(pgtoF.aId)};const nl=pagamentos.map(p=>p.id===editPgto.id?updated:p);setPagamentos(nl);await sP(nl);await addFinHist("Registro editado",updated,`Antes: ${fmtR(editPgto.valor)} / ${editPgto.status}`);setEditPgto(null);setShowPgto(false);resetPgtoF();t2("✅ Registro financeiro atualizado!");};
@@ -1660,7 +1686,7 @@ export default function App() {
             <div style={{display:"flex",gap:6}}><Btn small color={docTab==="ver"?N:"#94A3B8"} onClick={()=>setDocTab("ver")}>Ver</Btn><Btn small color={docTab==="add"?N:"#94A3B8"} onClick={()=>setDocTab("add")}>+ Adicionar</Btn></div>
           </div>
           {docTab==="ver"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{[{k:"rgAtleta",l:"RG Atleta"},{k:"rgResp",l:"RG Responsável"},{k:"comprResid",l:"Comp. Residência"},{k:"laudo",l:"Laudo"}].map(({k,l})=><div key={k} style={{background:a[k]?"#F0FFF4":"#FFF9F9",borderRadius:8,padding:10,border:`1px solid ${a[k]?"#86EFAC":R+"44"}`,textAlign:"center"}}><p style={{margin:"0 0 4px",fontSize:18}}>{a[k]?"✅":"❌"}</p><p style={{margin:0,fontSize:11,fontWeight:700,color:a[k]?"#065F46":R}}>{l}</p>{a[k]&&<a href={a[k].data} download={a[k].name} style={{fontSize:11,color:BL,fontWeight:700}}>⬇</a>}</div>)}</div>}
-          {docTab==="add"&&<div style={{display:"flex",flexDirection:"column",gap:10}}>{[{k:"rgAtleta",l:"🪪 RG do Atleta"},{k:"rgResp",l:"🪪 RG do Responsável"},{k:"comprResid",l:"🏠 Comprovante de Residência"},{k:"laudo",l:"📋 Laudo Médico"}].map(({k,l})=><FilePick key={k} label={l} file={null} onChange={async f=>{const nl=athletes.map(x=>x.id===a.id?{...x,[k]:f}:x);setAthletes(nl);await sA(nl);t2("✅ Documento salvo!");setDocTab("ver");}}/>)}</div>}
+          {docTab==="add"&&<div style={{display:"flex",flexDirection:"column",gap:10}}>{[{k:"rgAtleta",l:"🪪 RG do Atleta"},{k:"rgResp",l:"🪪 RG do Responsável"},{k:"comprResid",l:"🏠 Comprovante de Residência"},{k:"laudo",l:"📋 Laudo Médico"}].map(({k,l})=><FilePick key={k} label={l} file={null} onChange={async f=>{const patch={[k]:f};const nl=athletes.map(x=>x.id===a.id?{...x,...patch}:x);if(!await mutateAthlete({action:"patch",id:a.id,patch},nl))return;t2("✅ Documento salvo!");setDocTab("ver");}}/>)}</div>}
         </div>
         {renderAthFinanceBox(a,{allowPay:true})}
       </div>
