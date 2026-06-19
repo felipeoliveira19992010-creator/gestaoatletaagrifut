@@ -179,28 +179,116 @@ const buildDocsMsg = a => {
 
 const isImgDoc = f => !!(f&&f.data&&(((f.type||"").startsWith("image/"))||String(f.data).startsWith("data:image/")));
 const docName = f => f&&f.name?f.name:"Documento anexado";
+const PDFJS_SRC = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+const PDFJS_WORKER_SRC = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+let pdfJsLoader = null;
+const loadPdfJs = () => {
+  if(window.pdfjsLib){
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_WORKER_SRC;
+    return Promise.resolve(window.pdfjsLib);
+  }
+  if(pdfJsLoader) return pdfJsLoader;
+  pdfJsLoader=new Promise((resolve,reject)=>{
+    const existing=document.querySelector(`script[src="${PDFJS_SRC}"]`);
+    const done=()=>{
+      if(!window.pdfjsLib){reject(new Error("PDF.js não foi carregado."));return;}
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_WORKER_SRC;
+      resolve(window.pdfjsLib);
+    };
+    if(existing){
+      existing.addEventListener("load",done,{once:true});
+      existing.addEventListener("error",()=>reject(new Error("Não foi possível carregar o leitor de PDF.")),{once:true});
+      return;
+    }
+    const script=document.createElement("script");
+    script.src=PDFJS_SRC;
+    script.async=true;
+    script.onload=done;
+    script.onerror=()=>reject(new Error("Não foi possível carregar o leitor de PDF."));
+    document.head.appendChild(script);
+  });
+  return pdfJsLoader;
+};
+const renderPdfPages = async file => {
+  if(!file?.data||isImgDoc(file)) return [];
+  const pdfjs=await loadPdfJs();
+  const response=await fetch(file.data);
+  const data=new Uint8Array(await response.arrayBuffer());
+  const pdf=await pdfjs.getDocument({data}).promise;
+  const pages=[];
+  for(let pageNumber=1;pageNumber<=pdf.numPages;pageNumber++){
+    const page=await pdf.getPage(pageNumber);
+    const original=page.getViewport({scale:1});
+    const scale=Math.min(2,1400/original.width);
+    const viewport=page.getViewport({scale});
+    const canvas=document.createElement("canvas");
+    canvas.width=Math.max(1,Math.ceil(viewport.width));
+    canvas.height=Math.max(1,Math.ceil(viewport.height));
+    const context=canvas.getContext("2d",{alpha:false});
+    context.fillStyle="#FFFFFF";
+    context.fillRect(0,0,canvas.width,canvas.height);
+    await page.render({canvasContext:context,viewport}).promise;
+    pages.push(canvas.toDataURL("image/jpeg",0.88));
+    page.cleanup();
+  }
+  pdf.cleanup();
+  return pages;
+};
+const preparePrintDocuments = async a => {
+  const rendered={};
+  for(const key of ["rgAtleta","rgResp","comprResid","laudo"]){
+    const file=a?.[key];
+    if(!file||isImgDoc(file)) continue;
+    try{
+      rendered[key]=await renderPdfPages(file);
+    }catch(error){
+      console.error(`Falha ao preparar ${key} para impressão:`,error);
+      rendered[key]=[];
+      rendered.__failed=true;
+    }
+  }
+  return rendered;
+};
 const docTileHTML = (label,file,extra="") => {
   if(!file) return "";
   if(isImgDoc(file)){
     return `<div class="doc-file ${extra}"><div class="doc-caption"><strong>${label}</strong><span>${docName(file)}</span></div><div class="doc-img-wrap"><img src="${file.data}" alt="${label}"/></div></div>`;
   }
-  return `<div class="doc-file doc-pdf ${extra}"><div class="doc-caption"><strong>${label}</strong><span>${docName(file)}</span></div><div class="doc-pdf-box">Arquivo PDF anexado. Abra o documento original pelo perfil do atleta.</div></div>`;
+  return `<div class="doc-file doc-pdf ${extra}"><div class="doc-caption"><strong>${label}</strong><span>${docName(file)}</span></div><div class="doc-pdf-box">Não foi possível preparar este PDF para impressão. O arquivo original continua disponível no perfil do atleta.</div></div>`;
 };
-const docAttachmentsHTML = a => {
+const docTilesHTML = (label,file,key,pdfPages,extra="") => {
+  if(!file) return [];
+  if(isImgDoc(file)) return [docTileHTML(label,file,extra)];
+  const pages=pdfPages?.[key]||[];
+  if(!pages.length) return [docTileHTML(label,file,extra)];
+  return pages.map((data,index)=>docTileHTML(
+    `${label} - página ${index+1}`,
+    {data,type:"image/jpeg",name:`${docName(file)} - página ${index+1}`},
+    extra
+  ));
+};
+const docAttachmentsHTML = (a,pdfPages={}) => {
   const mainDocs=[
-    {label:"RG / Certidão do Atleta",file:a.rgAtleta},
-    {label:"RG / CPF do Responsável",file:a.rgResp},
-    {label:"Comprovante de Residência",file:a.comprResid}
+    {key:"rgAtleta",label:"RG / Certidão do Atleta",file:a.rgAtleta},
+    {key:"rgResp",label:"RG / CPF do Responsável",file:a.rgResp},
+    {key:"comprResid",label:"Comprovante de Residência",file:a.comprResid}
   ].filter(d=>d.file);
-  const main=mainDocs.length?`<section class="doc-page"><h2>Documentos Anexados</h2><p class="doc-note">Imagens em escala original, reduzidas automaticamente somente para caber na folha.</p><div class="doc-img-grid doc-count-${mainDocs.length}">${mainDocs.map(d=>docTileHTML(d.label,d.file)).join("")}</div></section>`:"";
-  const laudo=a.laudo?`<section class="doc-page laudo-page"><h2>Laudo Médico</h2><p class="doc-note">Laudo anexado em folha separada.</p><div class="doc-img-grid doc-count-1">${docTileHTML("Laudo Médico",a.laudo,"laudo-doc")}</div></section>`:"";
+  const mainTiles=mainDocs.flatMap(d=>docTilesHTML(d.label,d.file,d.key,pdfPages));
+  const mainClass=mainTiles.length>3?"doc-count-many":`doc-count-${mainTiles.length}`;
+  const main=mainTiles.length?`<section class="doc-page"><h2>Documentos Anexados</h2><p class="doc-note">Documentos exibidos integralmente e reduzidos automaticamente somente para caber na folha.</p><div class="doc-img-grid ${mainClass}">${mainTiles.join("")}</div></section>`:"";
+  const laudoTiles=docTilesHTML("Laudo Médico",a.laudo,"laudo",pdfPages,"laudo-doc");
+  const laudo=laudoTiles.map((tile,index)=>`<section class="doc-page laudo-page"><h2>Laudo Médico${laudoTiles.length>1?` - página ${index+1}`:""}</h2><p class="doc-note">Laudo anexado em folha separada.</p><div class="doc-img-grid doc-count-1">${tile}</div></section>`).join("");
   return main+laudo;
 };
-const docAttachmentStyles = `@page{size:A4;margin:10mm}.doc-page{page-break-before:always;break-before:page;display:flex;flex-direction:column;gap:8px;background:white}.doc-page h2{font-size:16px;color:#1B2A4A;margin:0;border-bottom:3px solid #F5C518;padding-bottom:6px}.doc-note{font-size:10px;color:#64748B;margin:0 0 4px}.doc-img-grid{flex:1;display:grid;gap:8px;min-height:0}.doc-count-1{grid-template-rows:1fr}.doc-count-2{grid-template-rows:1fr 1fr}.doc-count-3{grid-template-rows:repeat(3,1fr)}.doc-file{border:1px solid #CBD5E1;border-radius:8px;padding:7px;display:flex;flex-direction:column;min-height:0;overflow:hidden;break-inside:avoid;page-break-inside:avoid}.doc-caption{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:5px}.doc-caption strong{font-size:11px;color:#1B2A4A;text-transform:uppercase}.doc-caption span{font-size:9px;color:#64748B;text-align:right;word-break:break-all}.doc-img-wrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#F8FAFC;border-radius:6px}.doc-img-wrap img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block}.doc-pdf-box{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;background:#F8FAFC;border-radius:6px;color:#64748B;font-size:12px;padding:12px}.laudo-page .doc-img-grid{grid-template-rows:1fr}@media screen{.doc-page{min-height:980px;margin-top:28px;border-top:1px solid #E2E8F0;padding-top:16px}.doc-img-grid{height:850px}.laudo-doc .doc-img-wrap{height:auto;min-height:850px}}@media print{.doc-page{height:260mm;padding-top:0}.doc-img-grid{height:236mm}.doc-file{padding:5mm}.doc-caption{margin-bottom:3mm}.laudo-page{height:auto;min-height:260mm}.laudo-doc{display:block;overflow:visible;break-inside:auto;page-break-inside:auto}.laudo-doc .doc-img-wrap{height:auto;overflow:visible;display:block;text-align:center;background:white}.laudo-doc .doc-img-wrap img{max-height:none}}`;
+const docAttachmentStyles = `@page{size:A4;margin:10mm}.doc-page{page-break-before:always;break-before:page;display:flex;flex-direction:column;gap:8px;background:white}.doc-page h2{font-size:16px;color:#1B2A4A;margin:0;border-bottom:3px solid #F5C518;padding-bottom:6px}.doc-note{font-size:10px;color:#64748B;margin:0 0 4px}.doc-img-grid{flex:1;display:grid;gap:8px;min-height:0}.doc-count-1{grid-template-rows:1fr}.doc-count-2{grid-template-rows:1fr 1fr}.doc-count-3{grid-template-rows:repeat(3,1fr)}.doc-count-many{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(0,1fr)}.doc-file{border:1px solid #CBD5E1;border-radius:8px;padding:7px;display:flex;flex-direction:column;min-height:0;overflow:hidden;break-inside:avoid;page-break-inside:avoid}.doc-caption{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:5px}.doc-caption strong{font-size:11px;color:#1B2A4A;text-transform:uppercase}.doc-caption span{font-size:9px;color:#64748B;text-align:right;word-break:break-all}.doc-img-wrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#F8FAFC;border-radius:6px}.doc-img-wrap img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block}.doc-pdf-box{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;background:#F8FAFC;border-radius:6px;color:#64748B;font-size:12px;padding:12px}.laudo-page .doc-img-grid{grid-template-rows:1fr}@media screen{.doc-page{min-height:980px;margin-top:28px;border-top:1px solid #E2E8F0;padding-top:16px}.doc-img-grid{height:850px}.laudo-doc .doc-img-wrap{height:auto;min-height:850px}}@media print{.doc-page{height:260mm;padding-top:0}.doc-img-grid{height:236mm}.doc-file{padding:5mm}.doc-caption{margin-bottom:3mm}.laudo-page{height:260mm;min-height:260mm}.laudo-doc .doc-img-wrap{height:auto;min-height:0}.laudo-doc .doc-img-wrap img{max-height:228mm}}`;
 const athletePhotoHTML = a => a?.foto?`<div class="ath-photo"><img src="${a.foto}" alt="Foto 3x4 de ${a.nomeAtleta||"atleta"}"/></div>`:"";
 const athletePhotoStyles = `.hdr-info{flex:1;min-width:0}.ath-photo{width:30mm;height:40mm;flex:0 0 30mm;border:1px solid #CBD5E1;background:#F8FAFC;overflow:hidden}.ath-photo img{width:30mm;height:40mm;object-fit:cover;object-position:center;display:block}`;
 
-const generatePDF = (a, sig) => {
+const generatePDF = async (a, sig) => {
+  const w=window.open("","_blank");
+  if(!w) return;
+  w.document.write('<p style="font:700 14px Arial;padding:24px">Preparando ficha e documentos anexados...</p>');
+  const pdfPages=await preparePrintDocuments(a);
   const docs=[{l:"RG Atleta",ok:!!a.rgAtleta},{l:"RG Responsável",ok:!!a.rgResp},{l:"Comp. Residência",ok:!!a.comprResid},{l:"Laudo Médico",ok:!!a.laudo}];
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ficha — ${a.nomeAtleta}</title>
 <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Roboto,Arial,sans-serif;padding:28px;color:#1E293B;font-size:13px}
@@ -253,9 +341,9 @@ ${docs.map(d=>`<div class="${d.ok?"dok":"dno"}">${d.ok?"✅":"❌"}<br/>${d.l}</
 <div class="sig-b"><div style="height:70px"></div><div>Data: _____ / _____ / __________</div></div>
 </div>
 <div class="foot">Itajaí Esporte Clube — Agrifut · CNPJ ${CNPJ} · Gerado em ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR")}</div>
-${docAttachmentsHTML(a)}
+${docAttachmentsHTML(a,pdfPages)}
 <script>setTimeout(()=>window.print(),600)</script></body></html>`;
-  const w=window.open("","_blank"); if(w){w.document.write(html);w.document.close();}
+  w.document.open();w.document.write(html);w.document.close();
 };
 
 // ── UI Primitives ─────────────────────────────────────────
@@ -1893,8 +1981,10 @@ export default function App() {
 // ── PDF Modal ─────────────────────────────────────────────
 function PDFModal({atleta:a, sig, onClose}) {
   const iRef = useRef(null);
+  const [pdfPages,setPdfPages]=useState(null);
+  const [docsError,setDocsError]=useState("");
   const docs=[{l:"RG Atleta",ok:!!a.rgAtleta},{l:"RG Responsável",ok:!!a.rgResp},{l:"Comp. Residência",ok:!!a.comprResid},{l:"Laudo Médico",ok:!!a.laudo}];
-  const doPrint=()=>{if(iRef.current){iRef.current.contentWindow.focus();iRef.current.contentWindow.print();}};
+  const doPrint=()=>{if(pdfPages!==null&&iRef.current){iRef.current.contentWindow.focus();iRef.current.contentWindow.print();}};
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ficha — ${a.nomeAtleta}</title>
 <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Roboto,Arial,sans-serif;padding:28px;color:#1E293B;font-size:13px;max-width:800px;margin:0 auto}
 .hdr{display:flex;align-items:center;gap:16px;margin-bottom:20px;border-bottom:3px solid #F5C518;padding-bottom:14px}
@@ -1949,26 +2039,47 @@ ${docs.map(d=>`<div class="${d.ok?"dok":"dno"}">${d.ok?"✅":"❌"}<br/>${d.l}</
 <div class="sig-b"><div style="height:80px"></div><div>Data: &nbsp;&nbsp;&nbsp;/&nbsp;&nbsp;&nbsp;/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div></div>
 </div>
 <div class="foot">Itajaí Esporte Clube — Agrifut · CNPJ ${CNPJ} · Gerado em ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR")}</div>
-${docAttachmentsHTML(a)}
+${docAttachmentsHTML(a,pdfPages||{})}
 </body></html>`;
   useEffect(()=>{
+    let active=true;
+    setPdfPages(null);
+    setDocsError("");
+    preparePrintDocuments(a).then(rendered=>{
+      if(!active) return;
+      if(rendered.__failed) setDocsError("Um dos PDFs não pôde ser exibido. O arquivo original permanece salvo no perfil.");
+      setPdfPages(rendered);
+    }).catch(error=>{
+      console.error("Falha ao preparar documentos para impressão:",error);
+      if(active){
+        setDocsError("Não foi possível preparar os PDFs. Os arquivos originais permanecem salvos no perfil.");
+        setPdfPages({});
+      }
+    });
+    return()=>{active=false;};
+  },[a]);
+  useEffect(()=>{
+    if(pdfPages===null) return;
     if(!iRef.current) return;
     const doc=iRef.current.contentDocument||iRef.current.contentWindow.document;
     doc.open();doc.write(html);doc.close();
-  },[]);
+  },[pdfPages]);
   return(
     <div style={{position:"fixed",inset:0,background:"#0009",zIndex:2000,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:16}}>
       <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:860,maxHeight:"94vh",display:"flex",flexDirection:"column",boxShadow:"0 24px 60px #0006",overflow:"hidden"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 20px",borderBottom:"1px solid #eee",flexShrink:0}}>
           <span style={{fontWeight:800,fontSize:15,color:N}}>📄 Ficha — {a.nomeAtleta}</span>
           <div style={{display:"flex",gap:8}}>
-            <button onClick={doPrint} style={{background:N,color:G,border:"none",borderRadius:8,padding:"8px 18px",fontWeight:700,fontSize:13,cursor:"pointer"}}>🖨️ Imprimir / Salvar PDF</button>
+            <button disabled={pdfPages===null} onClick={doPrint} style={{background:N,color:G,border:"none",borderRadius:8,padding:"8px 18px",fontWeight:700,fontSize:13,cursor:pdfPages===null?"wait":"pointer",opacity:pdfPages===null ? .55 : 1}}>{pdfPages===null?"Preparando documentos...":"🖨️ Imprimir / Salvar PDF"}</button>
             <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#888"}}>✕</button>
           </div>
         </div>
-        <iframe ref={iRef} title="Ficha" style={{flex:1,border:"none",width:"100%",minHeight:0}}/>
+        <div style={{position:"relative",flex:1,minHeight:0}}>
+          <iframe ref={iRef} title="Ficha" style={{position:"absolute",inset:0,border:"none",width:"100%",height:"100%"}}/>
+          {pdfPages===null&&<div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",background:"white",color:N,fontWeight:700,fontSize:14}}>Preparando ficha e documentos anexados...</div>}
+        </div>
         <div style={{padding:"10px 20px",background:"#F8FAFC",borderTop:"1px solid #eee",fontSize:12,color:"#64748B",flexShrink:0,textAlign:"center"}}>
-          💡 Clique em <strong>Imprimir / Salvar PDF</strong> e escolha "Salvar como PDF" para gerar o arquivo.
+          {docsError||<>💡 Clique em <strong>Imprimir / Salvar PDF</strong> e escolha "Salvar como PDF" para gerar o arquivo.</>}
         </div>
       </div>
     </div>
