@@ -577,6 +577,7 @@ export default function App() {
   const [camps,setCamps]=useState([]);
   const [profs,setProfs]=useState([{id:"p1",nome:"Professor Demo",user:"prof",pass:"prof123",projeto:"Academy",categoria:"Sub-13",categorias:["Sub-13"],financeiro:false,estoqueEdit:false}]);
   const [loading,setLoading]=useState(true);
+  const [loadError,setLoadError]=useState(false);
   const lastAthSyncRef=useRef(0);
 
   // UI state
@@ -618,9 +619,11 @@ export default function App() {
   useEffect(()=>{
     (async()=>{
       let aths=[];
+      let athleteLoadFailed=false;
       for(const [k,fn] of [["agrifut-a9",setAthletes],["agrifut-p9",setPagamentos],["agrifut-fh9",setFinHist],["agrifut-pr9",setPresencas],["agrifut-c9",setCamps],["agrifut-pf9",setProfs],["agrifut-i9",setItens]]){
-        try{const r=await window.storage.get(k);if(r){const parsed=JSON.parse(r.value);fn(parsed);if(k==="agrifut-a9"){aths=parsed;lastAthSyncRef.current=Date.now();}}}catch(e){}
+        try{const r=await window.storage.get(k);if(r){const parsed=JSON.parse(r.value);fn(parsed);if(k==="agrifut-a9"){aths=parsed;lastAthSyncRef.current=Date.now();}}}catch(e){if(k==="agrifut-a9")athleteLoadFailed=true;}
       }
+      if(athleteLoadFailed){setLoadError(true);setLoading(false);return;}
       // Auto-login via URL token
       const urlToken=getTokenFromURL();
       if(urlToken){
@@ -1758,6 +1761,7 @@ export default function App() {
 
   // ── Login ─────────────────────────────────────────────
   if(loading) return <div style={{fontFamily:"'Roboto',system-ui,sans-serif",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:`linear-gradient(135deg,${N},#2D4A7A)`,padding:20}}><div style={{textAlign:"center",color:"white"}}><AgrifutLogo size={86}/><p style={{fontSize:18,fontWeight:900,margin:"14px 0 4px"}}>Carregando sistema</p><p style={{fontSize:13,color:"#CBD5E1",margin:0}}>Sincronizando dados do Agrifut...</p><div style={{width:180,height:6,background:"#ffffff22",borderRadius:99,overflow:"hidden",margin:"18px auto 0"}}><div style={{width:"58%",height:"100%",background:G,borderRadius:99}}/></div></div></div>;
+  if(loadError) return <div style={{fontFamily:"'Roboto',system-ui,sans-serif",minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#F8FAFC",padding:20}}><div style={{background:"white",border:"1px solid #E2E8F0",borderRadius:12,padding:24,maxWidth:460,textAlign:"center",boxShadow:"0 8px 24px #0001"}}><AgrifutLogo size={72}/><p style={{fontSize:18,fontWeight:900,color:N,margin:"14px 0 8px"}}>Não foi possível carregar os atletas</p><p style={{fontSize:13,color:"#64748B",lineHeight:1.5,margin:"0 0 18px"}}>Os cadastros continuam salvos no servidor. Verifique a internet e tente carregar novamente.</p><Btn color={N} onClick={()=>window.location.reload()}>Tentar novamente</Btn></div></div>;
 
   if(!user) return (
     <div style={{minHeight:"100vh",background:`linear-gradient(135deg,${N} 0%,#2D4A7A 100%)`,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>

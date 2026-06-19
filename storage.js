@@ -43,27 +43,36 @@ if (!window.storage) {
   const callServerStorage = async (method, key, value) => {
     const baseUrl = `/.netlify/functions/storage?key=${encodeURIComponent(key)}`;
     const request = async url => {
-      const response = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: method === "POST" ? JSON.stringify({ value }) : undefined
-      });
+      let lastError;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          const response = await fetch(url, {
+            method,
+            headers: { "Content-Type": "application/json" },
+            body: method === "POST" ? JSON.stringify({ value }) : undefined
+          });
 
-      if (!response.ok) {
-        throw new Error(`Server storage failed: ${response.status}`);
+          if (!response.ok) {
+            throw new Error(`Server storage failed: ${response.status}`);
+          }
+
+          return response.json();
+        } catch (error) {
+          lastError = error;
+          if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 300 * (attempt + 1)));
+        }
       }
 
-      return response.json();
+      throw lastError;
     };
 
     const result = await request(baseUrl);
     if (method !== "GET" || !result?.chunked) return result;
 
-    const parts = [];
-    for (let index = 0; index < result.chunks; index += 1) {
-      const chunk = await request(`${baseUrl}&chunk=${index}`);
-      parts.push(chunk.value || "");
-    }
+    const chunks = await Promise.all(
+      Array.from({length: result.chunks}, (_, index) => request(`${baseUrl}&chunk=${index}`))
+    );
+    const parts = chunks.map(chunk => chunk.value || "");
 
     return { key, value: parts.join("") };
   };
@@ -73,11 +82,26 @@ if (!window.storage) {
       if (!canUseServerStorage()) return localStorageApi.get(key);
       try {
         const result = await callServerStorage("GET", key);
-        if (result?.value) await localStorageApi.set(key, result.value);
+        if (result?.value) {
+          try {
+            await localStorageApi.set(key, result.value);
+          } catch (cacheError) {
+            console.warn("Local cache unavailable; using server data:", cacheError);
+          }
+        }
         return result;
       } catch (error) {
         console.warn("Using localStorage fallback:", error);
-        return localStorageApi.get(key);
+        const fallback = await localStorageApi.get(key);
+        if (key === "agrifut-a9") {
+          try {
+            const parsed = fallback ? JSON.parse(fallback.value) : [];
+            if (!Array.isArray(parsed) || parsed.length === 0) throw error;
+          } catch (fallbackError) {
+            throw error;
+          }
+        }
+        return fallback;
       }
     },
     async set(key, value) {
@@ -114,7 +138,11 @@ if (!window.storage) {
       }
 
       const result = await response.json();
-      await localStorageApi.mutateArray(key, mutation);
+      try {
+        await localStorageApi.mutateArray(key, mutation);
+      } catch (cacheError) {
+        console.warn("Local cache unavailable after server save:", cacheError);
+      }
       return result;
     }
   };

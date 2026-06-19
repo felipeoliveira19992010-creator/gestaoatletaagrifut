@@ -69,7 +69,7 @@ const mutateArrayValue = (current, mutation) => {
   throw new Error("Invalid array mutation");
 };
 
-const splitValueForResponse = (value, maxChars = 1500000) => {
+const splitValueForResponse = (value, maxChars = 4000000) => {
   const chunks = [];
   for (let start = 0; start < value.length; start += maxChars) {
     chunks.push(value.slice(start, start + maxChars));
