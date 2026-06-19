@@ -69,25 +69,40 @@ if (typeof window !== "undefined" && !window.storage) {
     key: string,
     value?: string
   ) => {
-    const url = `/.netlify/functions/storage?key=${encodeURIComponent(key)}`;
-    const response = await fetch(url, {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: method === "POST" ? JSON.stringify({ value }) : undefined
-    });
+    const baseUrl = `/.netlify/functions/storage?key=${encodeURIComponent(key)}`;
+    const request = async (url: string) => {
+      const response = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: method === "POST" ? JSON.stringify({ value }) : undefined
+      });
 
-    if (!response.ok) {
-      throw new Error(`Server storage failed: ${response.status}`);
+      if (!response.ok) {
+        throw new Error(`Server storage failed: ${response.status}`);
+      }
+
+      return response.json();
+    };
+
+    const result = await request(baseUrl);
+    if (method !== "GET" || !result?.chunked) return result;
+
+    const parts: string[] = [];
+    for (let index = 0; index < result.chunks; index += 1) {
+      const chunk = await request(`${baseUrl}&chunk=${index}`);
+      parts.push(chunk.value || "");
     }
 
-    return response.json();
+    return { key, value: parts.join("") };
   };
 
   window.storage = {
     async get(key) {
       if (!canUseServerStorage()) return localStorageApi.get(key);
       try {
-        return await callServerStorage("GET", key);
+        const result = await callServerStorage("GET", key);
+        if (result?.value) await localStorageApi.set(key, result.value);
+        return result;
       } catch (error) {
         console.warn("Using localStorage fallback:", error);
         return localStorageApi.get(key);
@@ -126,7 +141,9 @@ if (typeof window !== "undefined" && !window.storage) {
         throw new Error(`Server array mutation failed: ${response.status}`);
       }
 
-      return response.json();
+      const result = await response.json();
+      await localStorageApi.mutateArray(key, mutation);
+      return result;
     }
   };
 }

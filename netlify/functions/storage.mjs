@@ -69,6 +69,15 @@ const mutateArrayValue = (current, mutation) => {
   throw new Error("Invalid array mutation");
 };
 
+const splitValueForResponse = (value, maxChars = 1500000) => {
+  const chunks = [];
+  for (let start = 0; start < value.length; start += maxChars) {
+    chunks.push(value.slice(start, start + maxChars));
+  }
+  if (!chunks.length) chunks.push("");
+  return chunks;
+};
+
 const mutateStoredArray = async (key, mutation) => {
   const encodedKey = encodeURIComponent(key);
 
@@ -136,6 +145,32 @@ export async function handler(event) {
       if (!result.ok) return response(result.status, result.data);
 
       const row = Array.isArray(result.data) ? result.data[0] : null;
+      if (row && key === "agrifut-a9") {
+        const storedValue = row.value || "[]";
+        const chunks = splitValueForResponse(storedValue);
+        const requestedChunk = event.queryStringParameters?.chunk;
+
+        if (requestedChunk === undefined) {
+          return response(200, {
+            key,
+            chunked: true,
+            chunks: chunks.length,
+            length: storedValue.length
+          });
+        }
+
+        const index = Number(requestedChunk);
+        if (!Number.isInteger(index) || index < 0 || index >= chunks.length) {
+          return response(400, {error: "Invalid chunk"});
+        }
+
+        return response(200, {
+          key,
+          value: chunks[index],
+          chunk: index,
+          chunks: chunks.length
+        });
+      }
       return response(200, row ? { key: row.key, value: row.value } : null);
     }
 

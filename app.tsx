@@ -126,6 +126,27 @@ const finTypeKey = t => isUniformeType(t)?"Uniforme":String(t||"");
 const uniq = arr => [...new Set(arr.filter(Boolean))];
 const makePgtoRow = () => ({tipo:"",desc:"",valor:"",status:"Pendente",data:tod(),aId:"",comp:null,itemId:"",tamanho:"",qtd:"1"});
 const readB64 = f => new Promise(r => { const fr=new FileReader(); fr.onload=e=>r({data:e.target.result,name:f.name,type:f.type}); fr.readAsDataURL(f); });
+const readPhotoB64 = f => new Promise(resolve => {
+  const fr=new FileReader();
+  fr.onload=e=>{
+    const original=String(e.target.result||"");
+    const img=new Image();
+    img.onload=()=>{
+      const scale=Math.min(1,900/img.width,1200/img.height);
+      const canvas=document.createElement("canvas");
+      canvas.width=Math.max(1,Math.round(img.width*scale));
+      canvas.height=Math.max(1,Math.round(img.height*scale));
+      const ctx=canvas.getContext("2d");
+      ctx.fillStyle="#FFFFFF";ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+      resolve(canvas.toDataURL("image/jpeg",0.82));
+    };
+    img.onerror=()=>resolve(original);
+    img.src=original;
+  };
+  fr.onerror=()=>resolve("");
+  fr.readAsDataURL(f);
+});
 const expCSV = (rows,fn) => { const csv=rows.map(r=>r.map(c=>`"${String(c||"").replace(/"/g,'""')}"`).join(",")).join("\n"); const b=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"}); const u=URL.createObjectURL(b); const a=document.createElement("a"); a.href=u; a.download=fn; a.click(); URL.revokeObjectURL(u); };
 const waOpen = (tel,msg) => window.open(`https://wa.me/${tel}?text=${encodeURIComponent(msg)}`,"_blank");
 
@@ -178,6 +199,8 @@ const docAttachmentsHTML = a => {
   return main+laudo;
 };
 const docAttachmentStyles = `@page{size:A4;margin:10mm}.doc-page{page-break-before:always;break-before:page;display:flex;flex-direction:column;gap:8px;background:white}.doc-page h2{font-size:16px;color:#1B2A4A;margin:0;border-bottom:3px solid #F5C518;padding-bottom:6px}.doc-note{font-size:10px;color:#64748B;margin:0 0 4px}.doc-img-grid{flex:1;display:grid;gap:8px;min-height:0}.doc-count-1{grid-template-rows:1fr}.doc-count-2{grid-template-rows:1fr 1fr}.doc-count-3{grid-template-rows:repeat(3,1fr)}.doc-file{border:1px solid #CBD5E1;border-radius:8px;padding:7px;display:flex;flex-direction:column;min-height:0;overflow:hidden;break-inside:avoid;page-break-inside:avoid}.doc-caption{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:5px}.doc-caption strong{font-size:11px;color:#1B2A4A;text-transform:uppercase}.doc-caption span{font-size:9px;color:#64748B;text-align:right;word-break:break-all}.doc-img-wrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#F8FAFC;border-radius:6px}.doc-img-wrap img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block}.doc-pdf-box{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;background:#F8FAFC;border-radius:6px;color:#64748B;font-size:12px;padding:12px}.laudo-page .doc-img-grid{grid-template-rows:1fr}@media screen{.doc-page{min-height:980px;margin-top:28px;border-top:1px solid #E2E8F0;padding-top:16px}.doc-img-grid{height:850px}.laudo-doc .doc-img-wrap{height:auto;min-height:850px}}@media print{.doc-page{height:260mm;padding-top:0}.doc-img-grid{height:236mm}.doc-file{padding:5mm}.doc-caption{margin-bottom:3mm}.laudo-page{height:auto;min-height:260mm}.laudo-doc{display:block;overflow:visible;break-inside:auto;page-break-inside:auto}.laudo-doc .doc-img-wrap{height:auto;overflow:visible;display:block;text-align:center;background:white}.laudo-doc .doc-img-wrap img{max-height:none}}`;
+const athletePhotoHTML = a => a?.foto?`<div class="ath-photo"><img src="${a.foto}" alt="Foto 3x4 de ${a.nomeAtleta||"atleta"}"/></div>`:"";
+const athletePhotoStyles = `.hdr-info{flex:1;min-width:0}.ath-photo{width:30mm;height:40mm;flex:0 0 30mm;border:1px solid #CBD5E1;background:#F8FAFC;overflow:hidden}.ath-photo img{width:30mm;height:40mm;object-fit:cover;object-position:center;display:block}`;
 
 const generatePDF = (a, sig) => {
   const docs=[{l:"RG Atleta",ok:!!a.rgAtleta},{l:"RG Responsável",ok:!!a.rgResp},{l:"Comp. Residência",ok:!!a.comprResid},{l:"Laudo Médico",ok:!!a.laudo}];
@@ -185,6 +208,7 @@ const generatePDF = (a, sig) => {
 <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Roboto,Arial,sans-serif;padding:28px;color:#1E293B;font-size:13px}
 .hdr{display:flex;align-items:center;gap:16px;margin-bottom:20px;border-bottom:3px solid #F5C518;padding-bottom:14px}
 .logo{width:58px;height:58px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.logo img{width:100%;height:100%;object-fit:contain;display:block}
+${athletePhotoStyles}
 h1{font-size:20px;color:#1B2A4A}
 .sec{margin-bottom:18px}.sec-t{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#1B2A4A;border-bottom:2px solid #F5C518;padding-bottom:3px;margin-bottom:10px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px}.fl{font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase}.fv{color:#1E293B;margin-top:2px}
@@ -195,7 +219,7 @@ h1{font-size:20px;color:#1B2A4A}
 .foot{margin-top:24px;text-align:center;font-size:10px;color:#94A3B8;border-top:1px solid #E2E8F0;padding-top:10px}
 ${docAttachmentStyles}
 @media print{body{padding:14px}}</style></head><body>
-<div class="hdr"><div class="logo"><img src="${getLogoSrc()}" alt="Agrifut Itajaí EC"/></div><div><h1>Itajaí Agrifut</h1><p style="font-size:11px;color:#94A3B8">CNPJ ${CNPJ} · Ficha de Matrícula</p></div></div>
+<div class="hdr"><div class="logo"><img src="${getLogoSrc()}" alt="Agrifut Itajaí EC"/></div><div class="hdr-info"><h1>Itajaí Agrifut</h1><p style="font-size:11px;color:#94A3B8">CNPJ ${CNPJ} · Ficha de Matrícula</p></div>${athletePhotoHTML(a)}</div>
 <div class="sec"><div class="sec-t">Dados do Atleta</div><div class="grid">
 <div><div class="fl">Nome</div><div class="fv">${a.nomeAtleta||"—"}</div></div>
 <div><div class="fl">Posição</div><div class="fv">${a.posicao||"—"}</div></div>
@@ -868,7 +892,7 @@ export default function App() {
         <Inp label="E-mail" value={form.emailAtleta} onChange={v=>sF("emailAtleta",v)} type="email"/>
         <div style={{gridColumn:"1/-1"}}>
           <label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",display:"block",marginBottom:5}}>Foto</label>
-          <input type="file" accept="image/*" style={{fontSize:12}} onChange={async e=>{if(e.target.files[0]){const d=await readB64(e.target.files[0]);setForm(f=>({...f,foto:d.data}));}}}/>
+          <input type="file" accept="image/*" style={{fontSize:12}} onChange={async e=>{if(e.target.files[0]){const foto=await readPhotoB64(e.target.files[0]);setForm(f=>({...f,foto}));}}}/>
           {form.foto&&<img src={form.foto} alt="" style={{width:74,height:74,objectFit:"cover",borderRadius:10,marginTop:8,border:`3px solid ${G}`}}/>}
         </div>
         {user?.role==="admin"&&<div style={{gridColumn:"1/-1",display:"flex",justifyContent:"flex-end",paddingTop:4}}><Btn color={GR} disabled={!canQuickSubmit()} onClick={quickSubmit}>⚡ Cadastro rápido</Btn></div>}
@@ -1804,7 +1828,7 @@ export default function App() {
           <Inp label="Cidade" value={editAth.cidade} onChange={v=>setEditAth(e=>({...e,cidade:v}))}/>
           <div style={{gridColumn:"1/-1"}}>
             <label style={{fontSize:11,fontWeight:700,color:"#555",textTransform:"uppercase",display:"block",marginBottom:5}}>Foto</label>
-            <input type="file" accept="image/*" style={{fontSize:12}} onChange={async e=>{if(e.target.files[0]){const d=await readB64(e.target.files[0]);setEditAth(at=>({...at,foto:d.data}));}}}/>
+            <input type="file" accept="image/*" style={{fontSize:12}} onChange={async e=>{if(e.target.files[0]){const foto=await readPhotoB64(e.target.files[0]);setEditAth(at=>({...at,foto}));}}}/>
             {editAth.foto&&<div style={{display:"flex",gap:10,alignItems:"center",marginTop:8}}><img src={editAth.foto} alt="" style={{width:74,height:74,objectFit:"cover",borderRadius:10,border:`3px solid ${G}`}}/><Btn small outline color={R} onClick={()=>setEditAth(e=>({...e,foto:null}))}>Remover foto</Btn></div>}
           </div>
           <Sec label="Responsável"/>
@@ -1873,6 +1897,7 @@ function PDFModal({atleta:a, sig, onClose}) {
 <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Roboto,Arial,sans-serif;padding:28px;color:#1E293B;font-size:13px;max-width:800px;margin:0 auto}
 .hdr{display:flex;align-items:center;gap:16px;margin-bottom:20px;border-bottom:3px solid #F5C518;padding-bottom:14px}
 .logo{width:58px;height:58px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.logo img{width:100%;height:100%;object-fit:contain;display:block}
+${athletePhotoStyles}
 h1{font-size:20px;color:#1B2A4A;margin:0}.sub{font-size:11px;color:#94A3B8;margin-top:3px}
 .sec{margin-bottom:16px}.sec-t{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#1B2A4A;border-bottom:2px solid #F5C518;padding-bottom:3px;margin-bottom:10px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px}.fl{font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;margin-bottom:2px}.fv{color:#1E293B;font-size:13px}
@@ -1885,7 +1910,7 @@ h1{font-size:20px;color:#1B2A4A;margin:0}.sub{font-size:11px;color:#94A3B8;margi
 .foot{margin-top:24px;text-align:center;font-size:10px;color:#94A3B8;border-top:1px solid #E2E8F0;padding-top:10px}
 ${docAttachmentStyles}
 @media print{body{padding:14px}}</style></head><body>
-<div class="hdr"><div class="logo"><img src="${getLogoSrc()}" alt="Agrifut Itajaí EC"/></div><div><h1>Itajaí Agrifut</h1><p class="sub">CNPJ ${CNPJ} · itajaiesporteclube@gmail.com · (47) 99777-6191</p></div></div>
+<div class="hdr"><div class="logo"><img src="${getLogoSrc()}" alt="Agrifut Itajaí EC"/></div><div class="hdr-info"><h1>Itajaí Agrifut</h1><p class="sub">CNPJ ${CNPJ} · itajaiesporteclube@gmail.com · (47) 99777-6191</p></div>${athletePhotoHTML(a)}</div>
 <div class="sec"><div class="sec-t">Dados do Atleta</div><div class="grid">
 <div><p class="fl">Nome Completo</p><p class="fv">${a.nomeAtleta||"—"}</p></div>
 <div><p class="fl">Posição</p><p class="fv">${a.posicao||"—"}</p></div>
