@@ -49,16 +49,18 @@ const WA_GROUPS = {
 };
 const TAMANHOS = ['PP','P','M','G','GG','XG','Único'];
 const ITEM_CATS = ['Item de Venda','Material de Uso'];
+const DEFAULT_STORE_CONFIG = {atletaLoja:true};
 const ITENS_INICIAIS = [
-  {id:1,nome:'Uniforme de Treino',categoria:'Item de Venda',preco:90,tamanhos:['P','M','G','GG'],qtd:{P:10,M:10,G:8,GG:5},foto:null,descricao:'Conjunto treino oficial Agrifut'},
-  {id:2,nome:'Camisa de Torcida',categoria:'Item de Venda',preco:119.9,tamanhos:['P','M','G','GG','XG'],qtd:{P:15,M:15,G:12,GG:8,XG:4},foto:null,descricao:'Camisa oficial de torcida'},
-  {id:3,nome:'Uniforme de Passeio',categoria:'Item de Venda',preco:0,tamanhos:['P','M','G','GG'],qtd:{P:5,M:5,G:4,GG:3},foto:null,descricao:'Uniforme oficial de passeio'},
-  {id:4,nome:'Boné',categoria:'Item de Venda',preco:59.9,tamanhos:['Único'],qtd:{Único:20},foto:null,descricao:'Boné oficial Agrifut Itajaí EC'},
+  {id:1,nome:'Uniforme de Treino',categoria:'Item de Venda',preco:90,tamanhos:['P','M','G','GG'],qtd:{P:10,M:10,G:8,GG:5},foto:null,descricao:'Conjunto treino oficial Agrifut',visivelAtleta:true},
+  {id:2,nome:'Camisa de Torcida',categoria:'Item de Venda',preco:119.9,tamanhos:['P','M','G','GG','XG'],qtd:{P:15,M:15,G:12,GG:8,XG:4},foto:null,descricao:'Camisa oficial de torcida',visivelAtleta:true},
+  {id:3,nome:'Uniforme de Passeio',categoria:'Item de Venda',preco:0,tamanhos:['P','M','G','GG'],qtd:{P:5,M:5,G:4,GG:3},foto:null,descricao:'Uniforme oficial de passeio',visivelAtleta:true},
+  {id:4,nome:'Boné',categoria:'Item de Venda',preco:59.9,tamanhos:['Único'],qtd:{'Único':20},foto:null,descricao:'Boné oficial Agrifut Itajaí EC',visivelAtleta:true},
 ];
 
 const N="#1B2A4A", G="#F5C518", GR="#25D366", R="#DC2626", PU="#7C3AED", BL="#2563EB", OR="#D97706";
 const WA_ADMIN = "5547997776191";
 const CNPJ = "13.254.085/0001-86";
+const PIX_KEY = CNPJ.replace(/\D/g,"");
 
 // ── Helpers ───────────────────────────────────────────────
 const tod = () => new Date().toISOString().slice(0,10);
@@ -122,6 +124,9 @@ const profCatsOf = pf => Array.isArray(pf?.categorias)?pf.categorias.filter(Bool
 const isUniformeType = t => ["uniforme","uniforme de treino"].includes(normTxt(t));
 const finTypeKey = t => isUniformeType(t)?"Uniforme":String(t||"");
 const uniq = arr => [...new Set(arr.filter(Boolean))];
+const itemStockTotal = item => Object.values(item?.qtd||{}).reduce((s,q)=>s+Number(q||0),0);
+const isSaleItemVisibleForAthlete = item => item?.categoria==="Item de Venda"&&item.visivelAtleta!==false&&itemStockTotal(item)>0;
+const pixQrSrc = (size=190) => `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(PIX_KEY)}&bgcolor=ffffff&color=1B2A4A&margin=8&format=png`;
 const makePgtoRow = () => ({tipo:"",desc:"",valor:"",status:"Pendente",data:tod(),aId:"",comp:null,itemId:"",tamanho:"",qtd:"1"});
 const readB64 = f => new Promise(r => { const fr=new FileReader(); fr.onload=e=>r({data:e.target.result,name:f.name,type:f.type}); fr.readAsDataURL(f); });
 const readPhotoB64 = f => new Promise(resolve => {
@@ -280,21 +285,24 @@ const docAttachmentsHTML = (a,pdfPages={}) => {
   const laudo=laudoTiles.map((tile,index)=>`<section class="doc-page laudo-page"><h2>Laudo Médico${laudoTiles.length>1?` - página ${index+1}`:""}</h2><p class="doc-note">Laudo anexado em folha separada.</p><div class="doc-img-grid doc-count-1">${tile}</div></section>`).join("");
   return main+laudo;
 };
-const docAttachmentStyles = `@page{size:A4;margin:10mm}.doc-page{page-break-before:always;break-before:page;display:flex;flex-direction:column;gap:8px;background:white}.doc-page h2{font-size:16px;color:#1B2A4A;margin:0;border-bottom:3px solid #F5C518;padding-bottom:6px}.doc-note{font-size:10px;color:#64748B;margin:0 0 4px}.doc-img-grid{flex:1;display:grid;gap:8px;min-height:0}.doc-count-1{grid-template-rows:1fr}.doc-count-2{grid-template-rows:1fr 1fr}.doc-count-3{grid-template-rows:repeat(3,1fr)}.doc-count-many{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(0,1fr)}.doc-file{border:1px solid #CBD5E1;border-radius:8px;padding:7px;display:flex;flex-direction:column;min-height:0;overflow:hidden;break-inside:avoid;page-break-inside:avoid}.doc-caption{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:5px}.doc-caption strong{font-size:11px;color:#1B2A4A;text-transform:uppercase}.doc-caption span{font-size:9px;color:#64748B;text-align:right;word-break:break-all}.doc-img-wrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#F8FAFC;border-radius:6px}.doc-img-wrap img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block}.doc-pdf-box{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;background:#F8FAFC;border-radius:6px;color:#64748B;font-size:12px;padding:12px}.laudo-page .doc-img-grid{grid-template-rows:1fr}@media screen{.doc-page{min-height:980px;margin-top:28px;border-top:1px solid #E2E8F0;padding-top:16px}.doc-img-grid{height:850px}.laudo-doc .doc-img-wrap{height:auto;min-height:850px}}@media print{.doc-page{height:260mm;padding-top:0}.doc-img-grid{height:236mm}.doc-file{padding:5mm}.doc-caption{margin-bottom:3mm}.laudo-page{height:260mm;min-height:260mm}.laudo-doc .doc-img-wrap{height:auto;min-height:0}.laudo-doc .doc-img-wrap img{max-height:228mm}}`;
+const docAttachmentStyles = `@page{size:A4;margin:8mm}.doc-page{display:flex;flex-direction:column;gap:8px;background:white}.doc-page h2{font-size:16px;color:#1B2A4A;margin:0;border-bottom:3px solid #F5C518;padding-bottom:6px}.doc-note{font-size:10px;color:#64748B;margin:0 0 4px}.doc-img-grid{flex:1;display:grid;gap:8px;min-height:0}.doc-count-1{grid-template-rows:1fr}.doc-count-2{grid-template-rows:1fr 1fr}.doc-count-3{grid-template-rows:repeat(3,1fr)}.doc-count-many{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(0,1fr)}.doc-file{border:1px solid #CBD5E1;border-radius:8px;padding:7px;display:flex;flex-direction:column;min-height:0;overflow:hidden;break-inside:avoid;page-break-inside:avoid}.doc-caption{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:5px}.doc-caption strong{font-size:11px;color:#1B2A4A;text-transform:uppercase}.doc-caption span{font-size:9px;color:#64748B;text-align:right;word-break:break-all}.doc-img-wrap{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#F8FAFC;border-radius:6px}.doc-img-wrap img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;display:block}.doc-pdf-box{flex:1;display:flex;align-items:center;justify-content:center;text-align:center;background:#F8FAFC;border-radius:6px;color:#64748B;font-size:12px;padding:12px}.laudo-page .doc-img-grid{grid-template-rows:1fr}@media screen{.doc-page{min-height:980px;margin-top:28px;border-top:1px solid #E2E8F0;padding-top:16px}.doc-img-grid{height:850px}.laudo-doc .doc-img-wrap{height:auto;min-height:850px}}@media print{.doc-page{height:279mm;padding:0;break-inside:avoid;page-break-inside:avoid}.doc-page+.doc-page{break-before:page;page-break-before:always}.doc-img-grid{height:auto}.doc-file{padding:4mm}.doc-caption{margin-bottom:2mm}.laudo-page{height:279mm;min-height:279mm}.laudo-doc .doc-img-wrap{height:auto;min-height:0}.laudo-doc .doc-img-wrap img{max-height:249mm}}`;
 const athletePhotoHTML = a => a?.foto?`<div class="ath-photo"><img src="${a.foto}" alt="Foto 3x4 de ${a.nomeAtleta||"atleta"}"/></div>`:"";
 const athletePhotoStyles = `.hdr-info{flex:1;min-width:0}.ath-photo{width:30mm;height:40mm;flex:0 0 30mm;border:1px solid #CBD5E1;background:#F8FAFC;overflow:hidden}.ath-photo img{width:30mm;height:40mm;object-fit:cover;object-position:center;display:block}`;
+const athletePrintLayoutStyles = `@media print{html,body{margin:0!important;padding:0!important;max-width:none!important}.profile-page{height:279mm;display:flex;flex-direction:column;overflow:hidden;break-inside:avoid;page-break-inside:avoid}.profile-page.has-documents{break-after:page;page-break-after:always}.profile-page .hdr{margin-bottom:3mm;padding-bottom:2mm;gap:4mm}.profile-page .logo{width:15mm;height:15mm}.profile-page .sec{margin-bottom:2.2mm}.profile-page .sec-t{font-size:9px;letter-spacing:1px;padding-bottom:.6mm;margin-bottom:1.4mm}.profile-page .grid{gap:1.2mm 5mm}.profile-page .fl{font-size:8px;margin:0}.profile-page .fv{font-size:10px;line-height:1.18;margin-top:.4mm}.profile-page .termo{font-size:9px;line-height:1.35;padding:2mm;margin-bottom:1.2mm;border-radius:4px}.profile-page .doc-g{gap:1.5mm}.profile-page .dok,.profile-page .dno{padding:1.2mm;font-size:8px;border-radius:4px}.profile-page .sig-a{margin-top:auto;padding-top:2.5mm;gap:8mm}.profile-page .sig-b{font-size:9px;padding-top:1.2mm}.profile-page .sig-b img{max-height:14mm!important;margin-bottom:1mm!important}.profile-page .sig-space{height:14mm!important}.profile-page .foot{margin-top:2.5mm;padding-top:1.5mm;font-size:8px}}`;
 
 const generatePDF = async (a, sig) => {
   const w=window.open("","_blank");
   if(!w) return;
   w.document.write('<p style="font:700 14px Arial;padding:24px">Preparando ficha e documentos anexados...</p>');
   const pdfPages=await preparePrintDocuments(a);
+  const hasAttachments=!!(a.rgAtleta||a.rgResp||a.comprResid||a.laudo);
   const docs=[{l:"RG Atleta",ok:!!a.rgAtleta},{l:"RG Responsável",ok:!!a.rgResp},{l:"Comp. Residência",ok:!!a.comprResid},{l:"Laudo Médico",ok:!!a.laudo}];
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ficha — ${a.nomeAtleta}</title>
 <style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Roboto,Arial,sans-serif;padding:28px;color:#1E293B;font-size:13px}
 .hdr{display:flex;align-items:center;gap:16px;margin-bottom:20px;border-bottom:3px solid #F5C518;padding-bottom:14px}
 .logo{width:58px;height:58px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.logo img{width:100%;height:100%;object-fit:contain;display:block}
 ${athletePhotoStyles}
+${athletePrintLayoutStyles}
 h1{font-size:20px;color:#1B2A4A}
 .sec{margin-bottom:18px}.sec-t{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#1B2A4A;border-bottom:2px solid #F5C518;padding-bottom:3px;margin-bottom:10px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px}.fl{font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase}.fv{color:#1E293B;margin-top:2px}
@@ -304,7 +312,8 @@ h1{font-size:20px;color:#1B2A4A}
 .sig-a{display:grid;grid-template-columns:1fr 1fr;gap:30px;margin-top:28px}.sig-b{border-top:2px solid #1B2A4A;padding-top:6px;text-align:center;font-size:11px;color:#64748B;text-transform:uppercase}
 .foot{margin-top:24px;text-align:center;font-size:10px;color:#94A3B8;border-top:1px solid #E2E8F0;padding-top:10px}
 ${docAttachmentStyles}
-@media print{body{padding:14px}}</style></head><body>
+@media print{body{padding:0}}</style></head><body>
+<main class="profile-page${hasAttachments?" has-documents":""}">
 <div class="hdr"><div class="logo"><img src="${getLogoSrc()}" alt="Agrifut Itajaí EC"/></div><div class="hdr-info"><h1>Itajaí Agrifut</h1><p style="font-size:11px;color:#94A3B8">CNPJ ${CNPJ} · Ficha de Matrícula</p></div>${athletePhotoHTML(a)}</div>
 <div class="sec"><div class="sec-t">Dados do Atleta</div><div class="grid">
 <div><div class="fl">Nome</div><div class="fv">${a.nomeAtleta||"—"}</div></div>
@@ -337,10 +346,11 @@ ${docs.map(d=>`<div class="${d.ok?"dok":"dno"}">${d.ok?"✅":"❌"}<br/>${d.l}</
 <p style="font-size:12px;color:#64748B">✅ Termo aceito: ${a.termoAceito?"Sim":"Não"} &nbsp;|&nbsp; 📸 Imagem: ${a.imagemAceito?"Autorizada":"Não autorizada"}</p>
 </div>
 <div class="sig-a">
-<div class="sig-b">${sig?`<img src="${sig}" style="max-width:180px;max-height:70px;margin-bottom:4px" alt="Assinatura"/>`:'<div style="height:70px"></div>'}<div>Assinatura do Responsável</div></div>
-<div class="sig-b"><div style="height:70px"></div><div>Data: _____ / _____ / __________</div></div>
+<div class="sig-b">${sig?`<img src="${sig}" style="max-width:180px;max-height:70px;margin-bottom:4px" alt="Assinatura"/>`:'<div class="sig-space" style="height:70px"></div>'}<div>Assinatura do Responsável</div></div>
+<div class="sig-b"><div class="sig-space" style="height:70px"></div><div>Data: _____ / _____ / __________</div></div>
 </div>
 <div class="foot">Itajaí Esporte Clube — Agrifut · CNPJ ${CNPJ} · Gerado em ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR")}</div>
+</main>
 ${docAttachmentsHTML(a,pdfPages)}
 <script>setTimeout(()=>window.print(),600)</script></body></html>`;
   w.document.open();w.document.write(html);w.document.close();
@@ -691,8 +701,9 @@ export default function App() {
   const [toast,setToast]=useState("");
   const [stripeTarget,setStripeTarget]=useState(null);
   const [itens,setItens] = useState(ITENS_INICIAIS);
+  const [storeCfg,setStoreCfg]=useState(DEFAULT_STORE_CONFIG);
   const [showAddItem,setShowAddItem] = useState(false);
-  const [itemF,setItemF] = useState({nome:'',categoria:'Item de Venda',preco:'',tamanhos:[],descricao:'',foto:null,qtdInput:{}});
+  const [itemF,setItemF] = useState({nome:'',categoria:'Item de Venda',preco:'',tamanhos:[],descricao:'',foto:null,qtdInput:{},visivelAtleta:true});
   const [fEstCat,setFEstCat] = useState('all');
   const [pedidoItem,setPedidoItem] = useState(null);
   const [pedidoF,setPedidoF] = useState({tamanho:'',qtd:'1',aId:'',status:'Pendente'});
@@ -706,7 +717,7 @@ export default function App() {
     (async()=>{
       let aths=[];
       let athleteLoadFailed=false;
-      for(const [k,fn] of [["agrifut-a9",setAthletes],["agrifut-p9",setPagamentos],["agrifut-fh9",setFinHist],["agrifut-pr9",setPresencas],["agrifut-c9",setCamps],["agrifut-pf9",setProfs],["agrifut-i9",setItens]]){
+      for(const [k,fn] of [["agrifut-a9",setAthletes],["agrifut-p9",setPagamentos],["agrifut-fh9",setFinHist],["agrifut-pr9",setPresencas],["agrifut-c9",setCamps],["agrifut-pf9",setProfs],["agrifut-i9",setItens],["agrifut-cfg9",cfg=>setStoreCfg({...DEFAULT_STORE_CONFIG,...cfg})]]){
         try{const r=await window.storage.get(k);if(r){const parsed=JSON.parse(r.value);fn(parsed);if(k==="agrifut-a9"){aths=parsed;lastAthSyncRef.current=Date.now();}}}catch(e){if(k==="agrifut-a9")athleteLoadFailed=true;}
       }
       if(athleteLoadFailed){setLoadError(true);setLoading(false);return;}
@@ -744,6 +755,7 @@ export default function App() {
   const sC=async l=>{try{await window.storage.set("agrifut-c9",JSON.stringify(l));}catch(e){}};
   const sPf=async l=>{try{await window.storage.set("agrifut-pf9",JSON.stringify(l));}catch(e){}};
   const sI=async l=>{try{await window.storage.set("agrifut-i9",JSON.stringify(l));}catch(e){}};
+  const sCfg=async cfg=>{try{await window.storage.set("agrifut-cfg9",JSON.stringify(cfg));}catch(e){}};
   const t2=(m,d=3000)=>{setToast(m);setTimeout(()=>setToast(""),d);};
   const mutateAthlete=async(mutation,nextList)=>{
     try{
@@ -769,6 +781,8 @@ export default function App() {
   const handleLogin=({role,id,nome,tab:t,...rest})=>{const nextUser={role,id,nome,...rest};const nextTab=t||"athletes";setUser(nextUser);setTab(nextTab);saveLoginSession(nextUser,nextTab);};
   const logout=()=>{clearLoginSession();setUser(null);setNewAthToken("");};
   useEffect(()=>{if(!user||user.role==="publico")return;const saved=readLoginSession();const loginAt=saved?.loginAt||Date.now();saveLoginSession(user,tab,loginAt);const left=SESSION_TTL_MS-(Date.now()-loginAt);if(left<=0){logout();return;}const timer=setTimeout(logout,left);return()=>clearTimeout(timer);},[user,tab]);
+  useEffect(()=>{if(user?.role==="atleta"&&tab==="estoque"&&(storeCfg.atletaLoja===false||!itens.some(isSaleItemVisibleForAthlete)))setTab("portal");},[user,tab,storeCfg,itens]);
+  const updateStoreCfg=async patch=>{const next={...DEFAULT_STORE_CONFIG,...storeCfg,...patch};setStoreCfg(next);await sCfg(next);t2("✅ Configuração da loja atualizada!");};
   const duplicateAthletes=(draft,ignoreId=null)=>{
     const cpf=onlyDigits(draft?.cpfAtleta);
     const rg=normDoc(draft?.rgAtletaNum);
@@ -1261,15 +1275,15 @@ export default function App() {
 
   const canEditEstoque=()=>user&&(user.role==='admin'||(user.role==='professor'&&user.estoqueEdit));
   const canRegisterEstoqueSale=()=>user&&(user.role==='admin'||user.role==='professor');
-  const resetItemF=()=>{setItemF({nome:'',categoria:'Item de Venda',preco:'',tamanhos:[],descricao:'',foto:null,qtdInput:{}});setItemSizeInput("");};
-  const openEditItem=item=>{if(!canEditEstoque())return;setItemSizeInput("");setItemF({...item,qtdInput:{...(item.qtd||{})}});setShowAddItem(true);};
+  const resetItemF=()=>{setItemF({nome:'',categoria:'Item de Venda',preco:'',tamanhos:[],descricao:'',foto:null,qtdInput:{},visivelAtleta:true});setItemSizeInput("");};
+  const openEditItem=item=>{if(!canEditEstoque())return;setItemSizeInput("");setItemF({...item,visivelAtleta:item.categoria==="Item de Venda"?item.visivelAtleta!==false:false,qtdInput:{...(item.qtd||{})}});setShowAddItem(true);};
   const toggleItemSize=t=>setItemF(f=>({...f,tamanhos:f.tamanhos.includes(t)?f.tamanhos.filter(x=>x!==t):[...f.tamanhos,t]}));
   const addItemSize=()=>{const t=String(itemSizeInput||"").trim();if(!t)return;setItemF(f=>f.tamanhos.some(x=>normTxt(x)===normTxt(t))?f:{...f,tamanhos:[...f.tamanhos,t],qtdInput:{...f.qtdInput,[t]:f.qtdInput[t]||""}});setItemSizeInput("");};
   const saveItem = async () => {
     if(!canEditEstoque()||!itemF.nome||!itemF.categoria) return;
     const qtd={};
     itemF.tamanhos.forEach(t=>{qtd[t]=Number(itemF.qtdInput[t]||0);});
-    const item={id:itemF.id||Date.now(),nome:itemF.nome,categoria:itemF.categoria,preco:Number(itemF.preco||0),tamanhos:itemF.tamanhos,qtd,foto:itemF.foto,descricao:itemF.descricao};
+    const item={id:itemF.id||Date.now(),nome:itemF.nome,categoria:itemF.categoria,preco:Number(itemF.preco||0),tamanhos:itemF.tamanhos,qtd,foto:itemF.foto,descricao:itemF.descricao,visivelAtleta:itemF.categoria==="Item de Venda"?itemF.visivelAtleta!==false:false};
     const nl=itemF.id?itens.map(i=>i.id===itemF.id?item:i):[...itens,item];
     setItens(nl);await sI(nl);setShowAddItem(false);resetItemF();t2(itemF.id?'✅ Item atualizado!':'✅ Item cadastrado!');
   };
@@ -1297,19 +1311,20 @@ export default function App() {
     const status=pedidoF.status||"Pendente";
     const ok=await registerStockSale(item,ath,tam,qtd,status);if(!ok)return;
     const total=item.preco*Number(qtd||1);
-    const msg=`🛍️ *PEDIDO — Agrifut Loja*\n\n`+
-      `📦 Item: *${item.nome}*\n`+
-      `📐 Tamanho: *${tam}*\n`+
-      `🔢 Quantidade: *${qtd}*\n`+
-      `💰 Valor total: *${item.preco>0?fmtR(total):'A confirmar'}*\n\n`+
-      `Status: *${status}*\n\n`+
-      `👤 Atleta: *${ath?ath.nomeAtleta:'—'}*\n`+
-      `📂 Categoria: *${ath?ath.categoria||'—':'—'}*\n`+
-      `📱 Responsável: ${ath?ath.nomeResp:'—'}\n\n`+
-      `💳 *Pagamento via PIX — CNPJ:*\n${CNPJ}\n`+
-      `_Itajaí Esporte Clube_\n\n`+
-      `_Após o pagamento, envie o comprovante para este número._\n\n`+
-      `_Itajaí Agrifut 🟡⚫_`;
+    const msg=`PEDIDO AGRIFUT LOJA\n\n`+
+      `Nome completo do atleta: ${ath?ath.nomeAtleta:'—'}\n`+
+      `Categoria: ${ath?ath.categoria||'—':'—'}\n`+
+      `Projeto: ${ath?ath.projeto||'—':'—'}\n`+
+      `Responsável: ${ath?ath.nomeResp||'—':'—'}\n\n`+
+      `Item: ${item.nome}\n`+
+      `Tamanho do uniforme/item: ${tam}\n`+
+      `Quantidade: ${qtd}\n`+
+      `Valor total: ${item.preco>0?fmtR(total):'A confirmar'}\n`+
+      `Status: ${status}\n\n`+
+      `Pagamento PIX\n`+
+      `CNPJ: ${CNPJ}\n`+
+      `Itajaí Esporte Clube\n\n`+
+      `IMPORTANTE: anexe o comprovante do PIX junto ao envio desta mensagem no WhatsApp.`;
     const phone=ath&&onlyDigits(ath.telResp||ath.telAtleta);
     waOpen(phone?"55"+phone:WA_ADMIN,msg);
     setPedidoItem(null);resetPedidoF();t2('✅ Pedido enviado via WhatsApp!');
@@ -1318,12 +1333,19 @@ export default function App() {
 
   // ── Estoque ───────────────────────────────────────────
   const renderEstoque = () => {
-    const filtrado = itens.filter(i => fEstCat==='all' || i.categoria===fEstCat);
+    const isAthleteStore=user?.role==="atleta";
+    const lojaAtletaAtiva=storeCfg.atletaLoja!==false;
+    const filtrado = isAthleteStore
+      ? itens.filter(isSaleItemVisibleForAthlete)
+      : itens.filter(i => fEstCat==='all' || i.categoria===fEstCat);
     const canManageEstoque=canEditEstoque();
     const canRegisterVenda=canRegisterEstoqueSale();
+    if(isAthleteStore&&!lojaAtletaAtiva){
+      return <div style={{maxWidth:640,margin:"32px auto",padding:"0 16px",textAlign:"center"}}><div style={{background:"white",borderRadius:16,padding:32,boxShadow:"0 2px 12px #0001"}}><p style={{fontSize:42,margin:"0 0 8px"}}>🛍️</p><p style={{fontWeight:900,fontSize:18,color:N,margin:"0 0 8px"}}>Loja indisponível no momento</p><p style={{fontSize:13,color:"#64748B",margin:"0 0 18px"}}>A loja do atleta está temporariamente desativada pela administração.</p><Btn color={N} onClick={()=>setTab("portal")}>Voltar ao perfil</Btn></div></div>;
+    }
     return (
       <div style={{maxWidth:1100,margin:'24px auto',padding:'0 16px'}}>
-        <div style={{display:'flex',gap:10,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
+        {!isAthleteStore&&<div style={{display:'flex',gap:10,marginBottom:16,alignItems:'center',flexWrap:'wrap'}}>
           <div style={{display:'flex',gap:6}}>
             {['all',...ITEM_CATS].map(c=>(
               <button key={c} onClick={()=>setFEstCat(c)}
@@ -1335,8 +1357,12 @@ export default function App() {
           {canManageEstoque&&(
             <Btn color={G} onClick={()=>{resetItemF();setShowAddItem(true);}} xst={{marginLeft:'auto'}}>+ Cadastrar Item</Btn>
           )}
-        </div>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:20}}>
+        </div>}
+        {canManageEstoque&&<div style={{background:"white",borderRadius:12,padding:13,boxShadow:"0 2px 8px #0001",border:`1px solid ${storeCfg.atletaLoja===false?R+"44":"#86EFAC"}`,marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+          <div><p style={{margin:0,fontWeight:900,color:N,fontSize:14}}>Loja no acesso dos atletas</p><p style={{margin:"2px 0 0",fontSize:12,color:"#64748B"}}>Quando desligada, a aba Loja desaparece do perfil do atleta.</p></div>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontWeight:900,color:storeCfg.atletaLoja===false?R:"#059669",fontSize:13}}><input type="checkbox" checked={storeCfg.atletaLoja!==false} onChange={e=>updateStoreCfg({atletaLoja:e.target.checked})} style={{accentColor:N,width:18,height:18}}/>{storeCfg.atletaLoja===false?"Oculta para atletas":"Visível para atletas"}</label>
+        </div>}
+        {!isAthleteStore&&<div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:12,marginBottom:20}}>
           {[
             {l:'Itens de Venda',v:itens.filter(i=>i.categoria==='Item de Venda').length,c:BL},
             {l:'Materiais de Uso',v:itens.filter(i=>i.categoria==='Material de Uso').length,c:'#059669'},
@@ -1347,14 +1373,14 @@ export default function App() {
               <p style={{margin:0,fontSize:12,color:'#666',fontWeight:600}}>{s.l}</p>
             </div>
           ))}
-        </div>
+        </div>}
         {filtrado.length===0
-          ? <div style={{background:'white',borderRadius:14,padding:48,textAlign:'center',boxShadow:'0 2px 8px #0001'}}><p style={{fontSize:40,margin:0}}>📦</p><p style={{color:'#888',fontWeight:600}}>Nenhum item cadastrado</p></div>
+          ? <div style={{background:'white',borderRadius:14,padding:48,textAlign:'center',boxShadow:'0 2px 8px #0001'}}><p style={{fontSize:40,margin:0}}>📦</p><p style={{color:'#888',fontWeight:600}}>{isAthleteStore?"Nenhum item disponível para pedido no momento":"Nenhum item cadastrado"}</p></div>
           : (
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:16}}>
               {filtrado.map(item=>{
                 const isVenda=item.categoria==='Item de Venda';
-                const totalQtd=Object.values(item.qtd).reduce((a,b)=>a+b,0);
+                const totalQtd=itemStockTotal(item);
                 return(
                   <div key={item.id} style={{background:'white',borderRadius:14,overflow:'hidden',boxShadow:'0 2px 12px #0001',border:`1.5px solid ${isVenda?BL+'33':'#05996933'}`}}>
                     <div style={{height:160,background:isVenda?BL+'10':'#05996910',display:'flex',alignItems:'center',justifyContent:'center',position:'relative'}}>
@@ -1363,6 +1389,7 @@ export default function App() {
                         : <div style={{textAlign:'center'}}><p style={{fontSize:48,margin:0}}>{isVenda?'🛍️':'📦'}</p><p style={{fontSize:12,color:'#64748B',margin:'4px 0 0'}}>{item.nome}</p></div>
                       }
                       <span style={{position:'absolute',top:8,right:8,background:isVenda?BL:'#059669',color:'white',borderRadius:99,padding:'2px 10px',fontSize:11,fontWeight:700}}>{item.categoria}</span>
+                      {canManageEstoque&&isVenda&&<span style={{position:'absolute',top:36,right:8,background:item.visivelAtleta===false?R:"#059669",color:'white',borderRadius:99,padding:'2px 10px',fontSize:10,fontWeight:900}}>{item.visivelAtleta===false?"Oculto atleta":"Loja atleta"}</span>}
                     </div>
                     <div style={{padding:14}}>
                       <p style={{margin:'0 0 4px',fontWeight:800,fontSize:15,color:N}}>{item.nome}</p>
@@ -1405,6 +1432,8 @@ export default function App() {
               <Sel label="Categoria" value={itemF.categoria} onChange={v=>setItemF(f=>({...f,categoria:v}))} opts={ITEM_CATS}/>
               <Inp label="Preço (R$)" type="number" value={itemF.preco} onChange={v=>setItemF(f=>({...f,preco:v}))} placeholder="0,00"/>
               <Inp label="Descrição" value={itemF.descricao} onChange={v=>setItemF(f=>({...f,descricao:v}))} full/>
+              {itemF.categoria==="Item de Venda"&&<label style={{gridColumn:"1/-1",display:"flex",alignItems:"center",gap:8,fontWeight:800,fontSize:13,color:N,background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:10,padding:"10px 12px"}}><input type="checkbox" checked={itemF.visivelAtleta!==false} onChange={e=>setItemF(f=>({...f,visivelAtleta:e.target.checked}))} style={{accentColor:N,width:16,height:16}}/>Exibir este item na loja do atleta</label>}
+              {itemF.categoria==="Material de Uso"&&<div style={{gridColumn:"1/-1",background:"#F8FAFC",border:"1px solid #E2E8F0",borderRadius:10,padding:"10px 12px",fontSize:12,color:"#64748B",fontWeight:700}}>Materiais de uso interno não aparecem para atletas.</div>}
               <div style={{gridColumn:'1/-1'}}>
                 <label style={{fontSize:11,fontWeight:700,color:'#555',textTransform:'uppercase',display:'block',marginBottom:6}}>Tamanhos Disponíveis</label>
                 <div style={{display:'flex',flexWrap:'wrap',gap:6,marginBottom:10}}>
@@ -1480,16 +1509,20 @@ export default function App() {
                 </div>}
               </div>
               {item.preco>0&&tamSel&&(
-                <div style={{background:'#F0FFF4',borderRadius:10,padding:12,border:'1px solid #86EFAC',marginBottom:12}}>
-                  <p style={{margin:0,fontWeight:700,color:'#065F46',fontSize:14}}>💰 Total: {fmtR(item.preco*Number(pedidoF.qtd||1))}</p>
-                  <p style={{margin:'4px 0 0',fontSize:12,color:'#065F46'}}>Pagamento via PIX — CNPJ: <strong>{CNPJ}</strong></p>
+                <div style={{background:'#F0FFF4',borderRadius:10,padding:12,border:'1px solid #86EFAC',marginBottom:12,display:"grid",gridTemplateColumns:"auto 1fr",gap:12,alignItems:"center"}}>
+                  <img src={pixQrSrc(126)} alt="QR Code PIX" style={{width:126,height:126,borderRadius:8,border:"1px solid #BBF7D0",background:"white",padding:6}}/>
+                  <div>
+                    <p style={{margin:0,fontWeight:900,color:'#065F46',fontSize:14}}>Total: {fmtR(item.preco*Number(pedidoF.qtd||1))}</p>
+                    <p style={{margin:'4px 0 0',fontSize:12,color:'#065F46'}}>PIX CNPJ: <strong>{CNPJ}</strong></p>
+                    <p style={{margin:'6px 0 0',fontSize:12,color:'#065F46',fontWeight:800}}>Faça o PIX pelo QR Code e anexe o comprovante na conversa do WhatsApp.</p>
+                  </div>
                 </div>
               )}
               <div style={{background:'#FFFBF0',borderRadius:10,padding:11,border:`1px solid ${G}44`,marginBottom:12,fontSize:12,color:'#92400E'}}>
-                ℹ️ Ao clicar em "Enviar Pedido", o WhatsApp abrirá com as informações. Realize o pagamento via PIX e envie o comprovante.
+                Ao clicar em "Enviar Pedido", o WhatsApp abrirá com os dados. Antes de enviar, anexe o comprovante do PIX quando o pedido tiver valor.
               </div>
               <div style={{display:'flex',gap:10,flexWrap:'wrap'}}>
-                <Btn color={GR} disabled={!tamSel||!pedidoF.qtd||Number(pedidoF.qtd)<1||(precisaAtleta&&!ath)} onClick={()=>sendPedidoWA(item,ath,tamSel,pedidoF.qtd)} xst={{flex:1}}>📲 Enviar Pedido via WhatsApp</Btn>
+                <Btn color={GR} disabled={!tamSel||!pedidoF.qtd||Number(pedidoF.qtd)<1||(precisaAtleta&&!ath)} onClick={()=>sendPedidoWA(item,ath,tamSel,pedidoF.qtd)} xst={{flex:1}}>Abrir WhatsApp e anexar comprovante</Btn>
                 {canRegisterVenda&&<Btn color={N} disabled={!tamSel||!pedidoF.qtd||Number(pedidoF.qtd)<1||(precisaAtleta&&!ath)} onClick={()=>finishStockSale(item,ath,tamSel,pedidoF.qtd)} xst={{flex:1}}>✅ Finalizar Venda</Btn>}
                 <Btn outline color="#888" onClick={()=>setPedidoItem(null)}>Cancelar</Btn>
               </div>
@@ -1875,7 +1908,8 @@ export default function App() {
   const ADMIN_TABS=[{id:"athletes",l:"Atletas"},{id:"form",l:"Cadastrar"},{id:"presenca",l:"Presença"},{id:"campeonatos",l:"Campeonatos"},{id:"financeiro",l:"Financeiro"},{id:"estoque",l:"Estoque"},{id:"professores",l:"Professores"}];
   const PROF_TABS=[{id:"athletes",l:"Turma"},{id:"form",l:"Cadastrar"},{id:"presenca",l:"Presença"},{id:"campeonatos",l:"Campeonatos"},...(user.financeiro?[{id:"financeiro",l:"Financeiro"}]:[]),{id:"estoque",l:"Estoque"}];
   const PUBLICO_TABS=[{id:"form",l:"Cadastro"}];
-  const ATLETA_TABS=[{id:"portal",l:"Meu Perfil"},{id:"estoque",l:"Loja"}];
+  const athleteStoreTab=storeCfg.atletaLoja!==false&&itens.some(isSaleItemVisibleForAthlete);
+  const ATLETA_TABS=[{id:"portal",l:"Meu Perfil"},...(athleteStoreTab?[{id:"estoque",l:"Loja"}]:[])];
   const tabs=user.role==="admin"?ADMIN_TABS:user.role==="professor"?PROF_TABS:user.role==="publico"?PUBLICO_TABS:ATLETA_TABS;
 
   return (
@@ -1983,6 +2017,7 @@ function PDFModal({atleta:a, sig, onClose}) {
   const iRef = useRef(null);
   const [pdfPages,setPdfPages]=useState(null);
   const [docsError,setDocsError]=useState("");
+  const hasAttachments=!!(a.rgAtleta||a.rgResp||a.comprResid||a.laudo);
   const docs=[{l:"RG Atleta",ok:!!a.rgAtleta},{l:"RG Responsável",ok:!!a.rgResp},{l:"Comp. Residência",ok:!!a.comprResid},{l:"Laudo Médico",ok:!!a.laudo}];
   const doPrint=()=>{if(pdfPages!==null&&iRef.current){iRef.current.contentWindow.focus();iRef.current.contentWindow.print();}};
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Ficha — ${a.nomeAtleta}</title>
@@ -1990,6 +2025,7 @@ function PDFModal({atleta:a, sig, onClose}) {
 .hdr{display:flex;align-items:center;gap:16px;margin-bottom:20px;border-bottom:3px solid #F5C518;padding-bottom:14px}
 .logo{width:58px;height:58px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.logo img{width:100%;height:100%;object-fit:contain;display:block}
 ${athletePhotoStyles}
+${athletePrintLayoutStyles}
 h1{font-size:20px;color:#1B2A4A;margin:0}.sub{font-size:11px;color:#94A3B8;margin-top:3px}
 .sec{margin-bottom:16px}.sec-t{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:2px;color:#1B2A4A;border-bottom:2px solid #F5C518;padding-bottom:3px;margin-bottom:10px}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px}.fl{font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;margin-bottom:2px}.fv{color:#1E293B;font-size:13px}
@@ -2001,7 +2037,8 @@ h1{font-size:20px;color:#1B2A4A;margin:0}.sub{font-size:11px;color:#94A3B8;margi
 .sig-b{border-top:2px solid #1B2A4A;padding-top:6px;text-align:center;font-size:11px;color:#64748B;text-transform:uppercase}
 .foot{margin-top:24px;text-align:center;font-size:10px;color:#94A3B8;border-top:1px solid #E2E8F0;padding-top:10px}
 ${docAttachmentStyles}
-@media print{body{padding:14px}}</style></head><body>
+@media print{body{padding:0}}</style></head><body>
+<main class="profile-page${hasAttachments?" has-documents":""}">
 <div class="hdr"><div class="logo"><img src="${getLogoSrc()}" alt="Agrifut Itajaí EC"/></div><div class="hdr-info"><h1>Itajaí Agrifut</h1><p class="sub">CNPJ ${CNPJ} · itajaiesporteclube@gmail.com · (47) 99777-6191</p></div>${athletePhotoHTML(a)}</div>
 <div class="sec"><div class="sec-t">Dados do Atleta</div><div class="grid">
 <div><p class="fl">Nome Completo</p><p class="fv">${a.nomeAtleta||"—"}</p></div>
@@ -2035,10 +2072,11 @@ ${docs.map(d=>`<div class="${d.ok?"dok":"dno"}">${d.ok?"✅":"❌"}<br/>${d.l}</
 <p style="font-size:11px;color:#64748B">✅ Termo aceito: <strong>${a.termoAceito?"Sim":"Não"}</strong> &nbsp;|&nbsp; 📸 Imagem: <strong>${a.imagemAceito?"Autorizada":"Não autorizada"}</strong></p>
 </div>
 <div class="sig-a">
-<div class="sig-b">${sig?`<img src="${sig}" style="max-width:200px;max-height:80px;margin:0 auto 6px;display:block" alt="Assinatura"/>`:'<div style="height:80px"></div>'}<div>Assinatura do Responsável</div></div>
-<div class="sig-b"><div style="height:80px"></div><div>Data: &nbsp;&nbsp;&nbsp;/&nbsp;&nbsp;&nbsp;/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div></div>
+<div class="sig-b">${sig?`<img src="${sig}" style="max-width:200px;max-height:80px;margin:0 auto 6px;display:block" alt="Assinatura"/>`:'<div class="sig-space" style="height:80px"></div>'}<div>Assinatura do Responsável</div></div>
+<div class="sig-b"><div class="sig-space" style="height:80px"></div><div>Data: &nbsp;&nbsp;&nbsp;/&nbsp;&nbsp;&nbsp;/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div></div>
 </div>
 <div class="foot">Itajaí Esporte Clube — Agrifut · CNPJ ${CNPJ} · Gerado em ${new Date().toLocaleDateString("pt-BR")} às ${new Date().toLocaleTimeString("pt-BR")}</div>
+</main>
 ${docAttachmentsHTML(a,pdfPages||{})}
 </body></html>`;
   useEffect(()=>{
