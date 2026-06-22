@@ -1,7 +1,7 @@
 // @ts-nocheck
 import React, { useState, useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import "./storage.js";
+import "./storage.js?v=2026-06-22-storage-2";
 
 const LOGO_SRC = "logo.png";
 const PROJECT_LOGOS = { Academy:"academy-logo.png", "Conexão":"conexao-logo.png" };
