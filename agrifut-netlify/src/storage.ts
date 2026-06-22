@@ -14,6 +14,10 @@ type BrowserStorage = {
       | { action: "patch"; id: string | number; patch: Record<string, unknown> }
       | { action: "delete"; id: string | number }
   ) => Promise<{ key: string }>;
+  storeFile: (
+    file: Record<string, unknown> & { data?: string; name?: string; type?: string; stored?: boolean },
+    prefix?: string
+  ) => Promise<Record<string, unknown>>;
 };
 
 declare global {
@@ -56,6 +60,9 @@ if (typeof window !== "undefined" && !window.storage) {
 
       window.localStorage.setItem(key, JSON.stringify(next));
       return { key };
+    },
+    async storeFile(file) {
+      return file;
     }
   };
 
@@ -63,6 +70,8 @@ if (typeof window !== "undefined" && !window.storage) {
     const host = window.location.hostname;
     return host !== "localhost" && host !== "127.0.0.1" && host !== "";
   };
+
+  const fileUrl = (key: string) => `/.netlify/functions/file-storage?key=${encodeURIComponent(key)}`;
 
   const callServerStorage = async (
     method: "GET" | "POST" | "DELETE",
@@ -97,10 +106,11 @@ if (typeof window !== "undefined" && !window.storage) {
     const result = await request(baseUrl);
     if (method !== "GET" || !result?.chunked) return result;
 
-    const chunks = await Promise.all(
-      Array.from({length: result.chunks}, (_, index) => request(`${baseUrl}&chunk=${index}`))
-    );
-    const parts = chunks.map(chunk => chunk.value || "");
+    const parts: string[] = [];
+    for (let index = 0; index < result.chunks; index += 1) {
+      const chunk = await request(`${baseUrl}&chunk=${index}`);
+      parts.push(chunk.value || "");
+    }
 
     return { key, value: parts.join("") };
   };
@@ -120,15 +130,8 @@ if (typeof window !== "undefined" && !window.storage) {
         return result;
       } catch (error) {
         console.warn("Using localStorage fallback:", error);
+        if (key === "agrifut-a9") throw error;
         const fallback = await localStorageApi.get(key);
-        if (key === "agrifut-a9") {
-          try {
-            const parsed = fallback ? JSON.parse(fallback.value) : [];
-            if (!Array.isArray(parsed) || parsed.length === 0) throw error;
-          } catch (fallbackError) {
-            throw error;
-          }
-        }
         return fallback;
       }
     },
@@ -152,14 +155,27 @@ if (typeof window !== "undefined" && !window.storage) {
     },
     async mutateArray(key, mutation) {
       if (!canUseServerStorage()) return localStorageApi.mutateArray(key, mutation);
-      const response = await fetch(
-        `/.netlify/functions/storage?key=${encodeURIComponent(key)}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(mutation)
+      let response: Response | undefined;
+      let lastError: unknown;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          response = await fetch(
+            `/.netlify/functions/storage?key=${encodeURIComponent(key)}`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(mutation)
+            }
+          );
+          if (response.ok || response.status < 500) break;
+        } catch (error) {
+          lastError = error;
         }
-      );
+        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1)));
+      }
+
+      if (!response && lastError) throw lastError;
+      if (!response) throw new Error("Server array mutation failed");
 
       if (!response.ok) {
         throw new Error(`Server array mutation failed: ${response.status}`);
@@ -172,6 +188,40 @@ if (typeof window !== "undefined" && !window.storage) {
         console.warn("Local cache unavailable after server save:", cacheError);
       }
       return result;
+    },
+    async storeFile(file, prefix = "file") {
+      if (!file?.data || file.stored || !canUseServerStorage()) return file;
+      const key = `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+      const chunkSize = 350000;
+      const chunks: string[] = [];
+      for (let start = 0; start < file.data.length; start += chunkSize) {
+        chunks.push(file.data.slice(start, start + chunkSize));
+      }
+      for (let index = 0; index < chunks.length; index += 1) {
+        const response = await fetch(fileUrl(key), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            chunk: index,
+            chunks: chunks.length,
+            value: chunks[index],
+            name: file.name || "documento",
+            type: file.type || "application/octet-stream",
+            size: file.data.length
+          })
+        });
+        if (!response.ok) {
+          throw new Error(`File storage failed: ${response.status}`);
+        }
+      }
+      const publicUrl = new URL(fileUrl(key), window.location.href).href;
+      return {
+        ...file,
+        data: publicUrl,
+        storageKey: key,
+        stored: true,
+        sizeChars: file.data.length
+      };
     }
   };
 }

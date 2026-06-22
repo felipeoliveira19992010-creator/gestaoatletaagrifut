@@ -63,6 +63,7 @@ const N="#1B2A4A", G="#F5C518", GR="#25D366", R="#DC2626", PU="#7C3AED", BL="#25
 const WA_ADMIN = "5547997776191";
 const CNPJ = "13.254.085/0001-86";
 const PIX_KEY = CNPJ.replace(/\D/g,"");
+const DOC_FIELDS = ["rgAtleta","rgResp","comprResid","laudo"];
 
 // ── Helpers ───────────────────────────────────────────────
 const tod = () => new Date().toISOString().slice(0,10);
@@ -130,7 +131,29 @@ const itemStockTotal = item => Object.values(item?.qtd||{}).reduce((s,q)=>s+Numb
 const isSaleItemVisibleForAthlete = item => item?.categoria==="Item de Venda"&&item.visivelAtleta!==false&&itemStockTotal(item)>0;
 const pixQrSrc = (size=190) => `https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encodeURIComponent(PIX_KEY)}&bgcolor=ffffff&color=1B2A4A&margin=8&format=png`;
 const makePgtoRow = () => ({tipo:"",desc:"",valor:"",status:"Pendente",data:tod(),aId:"",comp:null,itemId:"",tamanho:"",qtd:"1"});
-const readB64 = f => new Promise(r => { const fr=new FileReader(); fr.onload=e=>r({data:e.target.result,name:f.name,type:f.type}); fr.readAsDataURL(f); });
+const readB64 = f => new Promise(r => {
+  const fr=new FileReader();
+  fr.onload=e=>{
+    const original=String(e.target.result||"");
+    if(!(f.type||"").startsWith("image/")){r({data:original,name:f.name,type:f.type});return;}
+    const img=new Image();
+    img.onload=()=>{
+      const scale=Math.min(1,1500/img.width,1900/img.height);
+      const canvas=document.createElement("canvas");
+      canvas.width=Math.max(1,Math.round(img.width*scale));
+      canvas.height=Math.max(1,Math.round(img.height*scale));
+      const ctx=canvas.getContext("2d");
+      ctx.fillStyle="#FFFFFF";ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+      const name=String(f.name||"documento").replace(/\.[^.]+$/,"")+".jpg";
+      r({data:canvas.toDataURL("image/jpeg",0.76),name,type:"image/jpeg",originalType:f.type});
+    };
+    img.onerror=()=>r({data:original,name:f.name,type:f.type});
+    img.src=original;
+  };
+  fr.onerror=()=>r({data:"",name:f.name,type:f.type});
+  fr.readAsDataURL(f);
+});
 const readPhotoB64 = f => new Promise(resolve => {
   const fr=new FileReader();
   fr.onload=e=>{
@@ -742,7 +765,17 @@ export default function App() {
       if(document.visibilityState==="hidden"||Date.now()-lastAthSyncRef.current<30000)return;
       try{
         const result=await window.storage.get("agrifut-a9");
-        if(result){setAthletes(JSON.parse(result.value));lastAthSyncRef.current=Date.now();}
+        if(result){
+          const parsed=JSON.parse(result.value);
+          setAthletes(current=>{
+            if(Array.isArray(current)&&current.length>0&&Array.isArray(parsed)&&current.length-parsed.length>5){
+              console.warn("Sincronização ignorada: lista recebida menor que a atual.",{atual:current.length,recebida:parsed.length});
+              return current;
+            }
+            return parsed;
+          });
+          lastAthSyncRef.current=Date.now();
+        }
       }catch(e){console.warn("Não foi possível sincronizar atletas:",e);}
     };
     const onVisibility=()=>{if(document.visibilityState==="visible")refreshAthletes();};
@@ -759,6 +792,29 @@ export default function App() {
   const sI=async l=>{try{await window.storage.set("agrifut-i9",JSON.stringify(l));}catch(e){}};
   const sCfg=async cfg=>{try{await window.storage.set("agrifut-cfg9",JSON.stringify(cfg));}catch(e){}};
   const t2=(m,d=3000)=>{setToast(m);setTimeout(()=>setToast(""),d);};
+  const storeAthleteDoc=async(aId,field,file)=>{
+    if(!file?.data||file.stored) return file;
+    if(!window.storage?.storeFile) return file;
+    return await window.storage.storeFile(file,`athlete-${aId}-${field}`);
+  };
+  const storeAthleteDocs=async athlete=>{
+    const next={...athlete};
+    for(const field of DOC_FIELDS){
+      if(next[field]?.data&&!next[field].stored){
+        next[field]=await storeAthleteDoc(next.id,field,next[field]);
+      }
+    }
+    return next;
+  };
+  const storeDocPatch=async(aId,patch)=>{
+    const next={...patch};
+    for(const field of DOC_FIELDS){
+      if(next[field]?.data&&!next[field].stored){
+        next[field]=await storeAthleteDoc(aId,field,next[field]);
+      }
+    }
+    return next;
+  };
   const mutateAthlete=async(mutation,nextList)=>{
     try{
       await window.storage.mutateArray("agrifut-a9",mutation);
@@ -847,7 +903,8 @@ export default function App() {
     if(hasDuplicateBlock(clean)){setStep(0);t2("⚠️ CPF ou RG já cadastrado. Confira o atleta existente.");return;}
     if(!clean.projeto&&!confirm("Finalizar cadastro sem selecionar projeto? O atleta ficará em Sem projeto até ser editado.")){t2("Cadastro não finalizado.");return;}
     const token=genToken();
-    const a={...clean,id:Date.now(),token,age:ageOf(clean.dataNasc),createdAt:new Date().toISOString()};
+    let a={...clean,id:Date.now(),token,age:ageOf(clean.dataNasc),createdAt:new Date().toISOString()};
+    try{a=await storeAthleteDocs(a);}catch(e){console.error("Falha ao salvar documentos:",e);t2("⚠️ Não foi possível salvar os documentos. Tente com arquivo menor ou novamente.",6000);return;}
     const nl=[...athletes,a];if(!await mutateAthlete({action:"upsert",item:a},nl))return;
     setNewAthToken(token);
     setForm({...BLANK});setStep(0);
@@ -860,7 +917,7 @@ export default function App() {
   };
   const quickSubmit=async()=>{if(!canQuickSubmit()){t2("⚠️ Informe nome, data válida e confira CPF/RG duplicado.");return;}await submit();};
 
-  const saveEdit=async()=>{const clean={...normalizeCadastro(editAth),age:ageOf(editAth.dataNasc)};if(hasDuplicateBlock(clean,editAth.id)){t2("⚠️ CPF ou RG já cadastrado em outro atleta.");return;}const current=athletes.find(a=>a.id===editAth.id)||{};const patch=Object.fromEntries(Object.entries(clean).filter(([k,v])=>JSON.stringify(current[k])!==JSON.stringify(v)));const nl=athletes.map(a=>a.id===editAth.id?{...a,...patch}:a);if(!await mutateAthlete({action:"patch",id:editAth.id,patch},nl))return;setEditAth(null);t2("✅ Atualizado!");};
+  const saveEdit=async()=>{let clean={...normalizeCadastro(editAth),age:ageOf(editAth.dataNasc)};if(hasDuplicateBlock(clean,editAth.id)){t2("⚠️ CPF ou RG já cadastrado em outro atleta.");return;}try{clean=await storeAthleteDocs(clean);}catch(e){console.error("Falha ao salvar documentos:",e);t2("⚠️ Não foi possível salvar os documentos. Tente com arquivo menor ou novamente.",6000);return;}const current=athletes.find(a=>a.id===editAth.id)||{};const patch=Object.fromEntries(Object.entries(clean).filter(([k,v])=>JSON.stringify(current[k])!==JSON.stringify(v)));const nl=athletes.map(a=>a.id===editAth.id?{...a,...patch}:a);if(!await mutateAthlete({action:"patch",id:editAth.id,patch},nl))return;setEditAth(null);t2("✅ Atualizado!");};
   const migProjectOptions=()=>user?.role==="professor"?["Rendimento","Academy"]:PROJS;
   const doMig=async()=>{const opts=migProjectOptions();const nextProj=user?.role==="professor"?(opts.includes(migP)?migP:"Academy"):(migP||migAth.projeto);const patch={categoria:migC||migAth.categoria,projeto:nextProj};const nl=athletes.map(a=>a.id===migAth.id?{...a,...patch}:a);if(!await mutateAthlete({action:"patch",id:migAth.id,patch},nl))return;setMigAth(null);t2("✅ Migração salva no servidor!");};
   const delA=async id=>{if(!confirm("Remover atleta?"))return;const nl=athletes.filter(a=>a.id!==id);if(!await mutateAthlete({action:"delete",id},nl))return;setSelAth(null);};
@@ -1836,7 +1893,7 @@ export default function App() {
             <div style={{display:"flex",gap:6}}><Btn small color={docTab==="ver"?N:"#94A3B8"} onClick={()=>setDocTab("ver")}>Ver</Btn><Btn small color={docTab==="add"?N:"#94A3B8"} onClick={()=>setDocTab("add")}>+ Adicionar</Btn></div>
           </div>
           {docTab==="ver"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>{[{k:"rgAtleta",l:"RG Atleta"},{k:"rgResp",l:"RG Responsável"},{k:"comprResid",l:"Comp. Residência"},{k:"laudo",l:"Laudo"}].map(({k,l})=><div key={k} style={{background:a[k]?"#F0FFF4":"#FFF9F9",borderRadius:8,padding:10,border:`1px solid ${a[k]?"#86EFAC":R+"44"}`,textAlign:"center"}}><p style={{margin:"0 0 4px",fontSize:18}}>{a[k]?"✅":"❌"}</p><p style={{margin:0,fontSize:11,fontWeight:700,color:a[k]?"#065F46":R}}>{l}</p>{a[k]&&<a href={a[k].data} download={a[k].name} style={{fontSize:11,color:BL,fontWeight:700}}>⬇</a>}</div>)}</div>}
-          {docTab==="add"&&<div style={{display:"flex",flexDirection:"column",gap:10}}>{[{k:"rgAtleta",l:"🪪 RG do Atleta"},{k:"rgResp",l:"🪪 RG do Responsável"},{k:"comprResid",l:"🏠 Comprovante de Residência"},{k:"laudo",l:"📋 Laudo Médico"}].map(({k,l})=><FilePick key={k} label={l} file={null} onChange={async f=>{const patch={[k]:f};const nl=athletes.map(x=>x.id===a.id?{...x,...patch}:x);if(!await mutateAthlete({action:"patch",id:a.id,patch},nl))return;t2("✅ Documento salvo!");setDocTab("ver");}}/>)}</div>}
+          {docTab==="add"&&<div style={{display:"flex",flexDirection:"column",gap:10}}>{[{k:"rgAtleta",l:"🪪 RG do Atleta"},{k:"rgResp",l:"🪪 RG do Responsável"},{k:"comprResid",l:"🏠 Comprovante de Residência"},{k:"laudo",l:"📋 Laudo Médico"}].map(({k,l})=><FilePick key={k} label={l} file={null} onChange={async f=>{let patch={[k]:f};try{patch=await storeDocPatch(a.id,patch);}catch(e){console.error("Falha ao salvar documento:",e);t2("⚠️ Não foi possível salvar o documento. Tente com arquivo menor ou novamente.",6000);return;}const nl=athletes.map(x=>x.id===a.id?{...x,...patch}:x);if(!await mutateAthlete({action:"patch",id:a.id,patch},nl))return;t2("✅ Documento salvo!");setDocTab("ver");}}/>)}</div>}
         </div>
         {renderAthFinanceBox(a,{allowPay:true})}
       </div>
