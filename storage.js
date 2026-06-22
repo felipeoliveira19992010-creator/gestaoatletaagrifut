@@ -71,10 +71,22 @@ if (!window.storage) {
     const result = await request(baseUrl);
     if (method !== "GET" || !result?.chunked) return result;
 
-    const parts = [];
-    for (let index = 0; index < result.chunks; index += 1) {
-      const chunk = await request(`${baseUrl}&chunk=${index}`);
-      parts.push(chunk.value || "");
+    const parts = new Array(result.chunks).fill("");
+    const batchSize = 2;
+    for (let start = 0; start < result.chunks; start += batchSize) {
+      const indexes = Array.from(
+        { length: Math.min(batchSize, result.chunks - start) },
+        (_, offset) => start + offset
+      );
+      const batch = await Promise.all(
+        indexes.map(async index => {
+          const chunk = await request(`${baseUrl}&chunk=${index}`);
+          return [index, chunk.value || ""];
+        })
+      );
+      batch.forEach(([index, value]) => {
+        parts[index] = value;
+      });
     }
 
     return { key, value: parts.join("") };
