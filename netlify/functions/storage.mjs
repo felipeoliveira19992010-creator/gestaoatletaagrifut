@@ -327,6 +327,35 @@ export async function handler(event) {
     }
 
     if (event.httpMethod === "POST") {
+      if (key === "agrifut-a9" && event.queryStringParameters?.chunked === "1") {
+        const body = JSON.parse(event.body || "{}");
+        const chunk = Number(body.chunk);
+        const chunks = Number(body.chunks);
+        const length = Number(body.length || 0);
+
+        if (!Number.isInteger(chunk) || !Number.isInteger(chunks) || chunk < 0 || chunks < 1 || chunk >= chunks) {
+          return response(400, { error: "Invalid chunk info" });
+        }
+
+        if (typeof body.value !== "string") {
+          return response(400, { error: "Missing chunk value" });
+        }
+
+        const saved = await upsertSingleValue(chunkedKey(key, `chunk:${chunk}`), body.value);
+        if (!saved.ok) return response(saved.status, saved.data);
+
+        const meta = {
+          chunks,
+          length,
+          updatedAt: new Date().toISOString(),
+          source: "seed"
+        };
+        const savedMeta = await upsertSingleValue(chunkedKey(key, "meta"), JSON.stringify(meta));
+        if (!savedMeta.ok) return response(savedMeta.status, savedMeta.data);
+
+        return response(200, { key, chunk, chunks });
+      }
+
       if (key === "agrifut-a9") {
         return response(409, {error: "Athletes must be updated with PATCH"});
       }
